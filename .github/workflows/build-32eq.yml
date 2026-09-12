@@ -28,8 +28,11 @@ jobs:
       - name: Make GEQ HiFi 32-column display
         run: python3 tools/patch-geq-direct.py .
 
-      - name: Fix HiFi display double gating
+      - name: Fix HiFi display double gating and sqrt loop
         run: python3 tools/patch-geq-hifi-fix.py .
+
+      - name: Retune HiFi controls
+        run: python3 tools/patch-geq-hifi-controls.py .
 
       - name: Build ESP32-WROOM-32 4MB V4
         env:
@@ -37,10 +40,10 @@ jobs:
         run: pio run -e esp32_4MB_V4_M
 
       - name: Collect firmware
-        run: cp .pio/build/esp32_4MB_V4_M/firmware.bin WLEDMM_14.7.1_ESP32-WROOM32_32EQ-HiFi-Fix.bin
+        run: cp .pio/build/esp32_4MB_V4_M/firmware.bin WLEDMM_14.7.1_ESP32-WROOM32_32EQ-HiFi-v2.bin
 
       - name: Upload firmware artifact
         uses: actions/upload-artifact@v4
         with:
-          name: WLEDMM_14.7.1_ESP32-WROOM32_32EQ-HiFi-Fix
-          path: WLEDMM_14.7.1_ESP32-WROOM32_32EQ-HiFi-Fix.bin
+          name: WLEDMM_14.7.1_ESP32-WROOM32_32EQ-HiFi-v2
+          path: WLEDMM_14.7.1_ESP32-WROOM32_32EQ-HiFi-v2.bin
