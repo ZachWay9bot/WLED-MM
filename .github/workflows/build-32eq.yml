@@ -43,10 +43,10 @@ jobs:
         run: pio run -e esp32_4MB_V4_M
 
       - name: Collect firmware
-        run: cp .pio/build/esp32_4MB_V4_M/firmware.bin WLEDMM_14.7.1_ESP32-WROOM32_32EQ-HiFi-v3.bin
+        run: cp .pio/build/esp32_4MB_V4_M/firmware.bin WLEDMM_14.7.1_ESP32-WROOM32_32EQ-HiFi-v4.bin
 
       - name: Upload firmware artifact
         uses: actions/upload-artifact@v4
         with:
-          name: WLEDMM_14.7.1_ESP32-WROOM32_32EQ-HiFi-v3
-          path: WLEDMM_14.7.1_ESP32-WROOM32_32EQ-HiFi-v3.bin
+          name: WLEDMM_14.7.1_ESP32-WROOM32_32EQ-HiFi-v4
+          path: WLEDMM_14.7.1_ESP32-WROOM32_32EQ-HiFi-v4.bin
