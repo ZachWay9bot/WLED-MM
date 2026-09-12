@@ -34,8 +34,8 @@ jobs:
       - name: Retune HiFi controls
         run: python3 tools/patch-geq-hifi-controls.py .
 
-      - name: Apply INMP441 input attenuation
-        run: python3 tools/patch-geq-input-attenuation.py .
+      - name: Add classic row colors and extra 32-band effects
+        run: python3 tools/patch-geq32-extra-effects.py .
 
       - name: Build ESP32-WROOM-32 4MB V4
         env:
@@ -43,10 +43,10 @@ jobs:
         run: pio run -e esp32_4MB_V4_M
 
       - name: Collect firmware
-        run: cp .pio/build/esp32_4MB_V4_M/firmware.bin WLEDMM_14.7.1_ESP32-WROOM32_32EQ-HiFi-v4.bin
+        run: cp .pio/build/esp32_4MB_V4_M/firmware.bin WLEDMM_14.7.1_ESP32-WROOM32_32EQ-Classic-Plus.bin
 
       - name: Upload firmware artifact
         uses: actions/upload-artifact@v4
         with:
-          name: WLEDMM_14.7.1_ESP32-WROOM32_32EQ-HiFi-v4
-          path: WLEDMM_14.7.1_ESP32-WROOM32_32EQ-HiFi-v4.bin
+          name: WLEDMM_14.7.1_ESP32-WROOM32_32EQ-Classic-Plus
+          path: WLEDMM_14.7.1_ESP32-WROOM32_32EQ-Classic-Plus.bin
