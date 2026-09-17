@@ -1,0 +1,55 @@
+name: Build WLED-MM 14.7.1 32EQ ESP32-WROOM32
+
+on:
+  push:
+    branches:
+      - wled-mm-14.7.1-32eq
+  workflow_dispatch:
+
+jobs:
+  build-32eq:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install PlatformIO
+        run: pip install -r requirements.txt
+
+      - name: Apply 32-band GEQ patch
+        run: python3 tools/wled-mm-14.7.1-32eq-patcher.py .
+
+      - name: Make GEQ HiFi 32-column display
+        run: python3 tools/patch-geq-direct.py .
+
+      - name: Fix HiFi display double gating and sqrt loop
+        run: python3 tools/patch-geq-hifi-fix.py .
+
+      - name: Retune HiFi controls
+        run: python3 tools/patch-geq-hifi-controls.py .
+
+      - name: Add classic row colors and extra 32-band effects
+        run: python3 tools/patch-geq32-extra-effects.py .
+
+      - name: Apply 25 Hz subsonic high-pass filter
+        run: python3 tools/patch-geq-hpf.py .
+
+      - name: Build ESP32-WROOM-32 4MB V4
+        env:
+          WLED_RELEASE: True
+        run: pio run -e esp32_4MB_V4_M
+
+      - name: Collect firmware
+        run: cp .pio/build/esp32_4MB_V4_M/firmware.bin WLEDMM_14.7.1_ESP32-WROOM32_32EQ-Classic-Plus-HPF.bin
+
+      - name: Upload firmware artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: WLEDMM_14.7.1_ESP32-WROOM32_32EQ-Classic-Plus-HPF
+          path: WLEDMM_14.7.1_ESP32-WROOM32_32EQ-Classic-Plus-HPF.bin
