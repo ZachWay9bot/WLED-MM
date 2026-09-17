@@ -10,6 +10,7 @@ The goal of this branch is a classic HiFi / Technics-style 32-column spectrum an
 - Original 16-band `fftResult` remains intact for stock WLED-MM effects.
 - New 32-band data is exported through AudioReactive usermod data slot 12.
 - Existing AudioSync protocol remains unchanged and compatible. AudioSync receivers without local FFT data fall back to interpolation from the legacy 16 bands.
+- Gentle **25 Hz subsonic high-pass filter** before level measurement and FFT.
 - ESP32-WROOM-32 / 4 MB build target: `esp32_4MB_V4_M`.
 
 ## 32-band frequency mapping
@@ -66,7 +67,11 @@ Development and testing has primarily targeted an **INMP441 I²S microphone**. T
 
 AGC is not required for the 32-band effects. For a large speaker/subwoofer setup, running without AGC can give a more stable and natural spectrum because room and low-frequency background energy are not continuously amplified.
 
-No hard 70–80 Hz high-pass filter is added by this fork. Real sub-bass is intentionally retained.
+### Subsonic high-pass filter
+
+This build adds a first-order **25 Hz HPF** to the local microphone samples before the Info level measurement and FFT. Its purpose is to suppress DC drift, handling noise and subsonic room/microphone rumble without using a hard 70–80 Hz cut. The useful 30–80 Hz bass region therefore remains available to the analyzer.
+
+The filter state is continuous across FFT blocks. Both the legacy 16-band FFT and the local true 32-band FFT see the same filtered samples. The v2 gain behavior is otherwise unchanged.
 
 ## Building
 
@@ -74,13 +79,13 @@ A GitHub Actions workflow is included at:
 
 `.github/workflows/build-32eq.yml`
 
-It applies the 32-band and display patches and builds:
+It applies the 32-band, HiFi display, extra-effect and HPF patches and builds:
 
 ```text
 pio run -e esp32_4MB_V4_M
 ```
 
-The resulting firmware artifact is uploaded automatically by GitHub Actions.
+The resulting firmware artifact is uploaded automatically by GitHub Actions as `WLEDMM_14.7.1_ESP32-WROOM32_32EQ-Classic-Plus-HPF`.
 
 The source modifications are kept as patch scripts under `tools/` so the changes remain easy to inspect and re-apply against the exact WLED-MM 14.7.1 base.
 
