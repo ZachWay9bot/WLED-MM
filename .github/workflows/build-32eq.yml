@@ -37,16 +37,19 @@ jobs:
       - name: Add classic row colors and extra 32-band effects
         run: python3 tools/patch-geq32-extra-effects.py .
 
+      - name: Apply 25 Hz subsonic high-pass filter
+        run: python3 tools/patch-geq-hpf.py .
+
       - name: Build ESP32-WROOM-32 4MB V4
         env:
           WLED_RELEASE: True
         run: pio run -e esp32_4MB_V4_M
 
       - name: Collect firmware
-        run: cp .pio/build/esp32_4MB_V4_M/firmware.bin WLEDMM_14.7.1_ESP32-WROOM32_32EQ-Classic-Plus.bin
+        run: cp .pio/build/esp32_4MB_V4_M/firmware.bin WLEDMM_14.7.1_ESP32-WROOM32_32EQ-Classic-Plus-HPF.bin
 
       - name: Upload firmware artifact
         uses: actions/upload-artifact@v4
         with:
-          name: WLEDMM_14.7.1_ESP32-WROOM32_32EQ-Classic-Plus
-          path: WLEDMM_14.7.1_ESP32-WROOM32_32EQ-Classic-Plus.bin
+          name: WLEDMM_14.7.1_ESP32-WROOM32_32EQ-Classic-Plus-HPF
+          path: WLEDMM_14.7.1_ESP32-WROOM32_32EQ-Classic-Plus-HPF.bin
