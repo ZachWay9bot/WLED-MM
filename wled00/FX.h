@@ -400,7 +400,14 @@ static uint8_t strip_getPaletteBlend();  // forward declaration: little helper t
 #define FX_MODE_PARTICLEGALAXY         228
 
 #define FX_MODE_COLORCLOUDS            229
-#define MODE_COUNT                     230
+
+// WLED-MM true 32-band audio effects (mdev port)
+#define FX_MODE_GEQ32CENTER             230
+#define FX_MODE_GEQ32PEAKS              231
+#define FX_MODE_GEQ32WATERFALL          232
+#define FX_MODE_GEQ32TRACE              233
+
+#define MODE_COUNT                     234
 
 typedef enum mapping1D2D {
   M12_Pixels = 0,
