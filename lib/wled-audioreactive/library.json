@@ -1,0 +1,9 @@
+{
+  "name": "wled-audioreactive",
+  "version": "0.0.0-32eq-mdev",
+  "build": {
+    "libArchive": false,
+    "srcFilter": ["-<*>"],
+    "extraScript": "override_sqrt.py"
+  }
+}
