@@ -1,0 +1,123 @@
+name: Weekly MoonModules mdev sync
+
+on:
+  schedule:
+    # Mondays, 03:17 UTC (04:17 CET / 05:17 CEST)
+    - cron: '17 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: weekly-moonmodules-mdev-sync
+  cancel-in-progress: false
+
+env:
+  UPSTREAM_REPO: MoonModules/WLED-MM
+  UPSTREAM_REF: mdev
+  PORT_BRANCH: mdev-32eq-port
+  BASE_BRANCH: mdev
+  BUILD_ENV: esp32_4MB_V4_M
+
+jobs:
+  sync-test-build:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout True32EQ branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.PORT_BRANCH }}
+          fetch-depth: 0
+
+      - name: Configure git and fetch upstream
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add upstream "https://github.com/${UPSTREAM_REPO}.git"
+          git fetch --no-tags upstream "${UPSTREAM_REF}"
+          git fetch origin "${BASE_BRANCH}" "${PORT_BRANCH}"
+
+      - name: Merge upstream into candidate
+        id: merge
+        shell: bash
+        run: |
+          set -euo pipefail
+          UPSTREAM_SHA="$(git rev-parse "upstream/${UPSTREAM_REF}")"
+          CURRENT_SHA="$(git rev-parse HEAD)"
+          echo "Current True32EQ: ${CURRENT_SHA}"
+          echo "Current upstream:  ${UPSTREAM_SHA}"
+
+          if git merge-base --is-ancestor "upstream/${UPSTREAM_REF}" HEAD; then
+            echo "No new upstream commits."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git merge --no-edit "upstream/${UPSTREAM_REF}"
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          echo "port_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Python
+        if: steps.merge.outputs.changed == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Validate GEQ32 mapping
+        if: steps.merge.outputs.changed == 'true'
+        run: python3 tools/test_geq32_mapping.py
+
+      - name: Install PlatformIO
+        if: steps.merge.outputs.changed == 'true'
+        run: pip install -r requirements.txt
+
+      - name: Build ESP32-WROOM-32 4MB V4
+        if: steps.merge.outputs.changed == 'true'
+        env:
+          WLED_RELEASE: True
+        run: pio run -e "${BUILD_ENV}"
+
+      - name: Prepare versioned firmware
+        if: steps.merge.outputs.changed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="$(python3 -c 'import json; print(json.load(open("package.json"))["version"])')"
+          SAFE_VERSION="$(printf '%s' "$VERSION" | tr '/ ' '__')"
+          NAME="WLEDMM_${SAFE_VERSION}_ESP32-WROOM32_True32EQ.bin"
+          cp ".pio/build/${BUILD_ENV}/firmware.bin" "$NAME"
+          echo "FIRMWARE_NAME=$NAME" >> "$GITHUB_ENV"
+          echo "WLEDMM_VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Prepare base mdev merge
+        if: steps.merge.outputs.changed == 'true'
+        id: base
+        shell: bash
+        run: |
+          set -euo pipefail
+          PORT_SHA="$(git rev-parse HEAD)"
+          git branch weekly-port-candidate "$PORT_SHA"
+
+          git checkout -B weekly-base-candidate "origin/${BASE_BRANCH}"
+          git merge --no-edit "upstream/${UPSTREAM_REF}"
+
+          echo "port_sha=$PORT_SHA" >> "$GITHUB_OUTPUT"
+          echo "base_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Atomically update fork branches
+        if: steps.merge.outputs.changed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git push --atomic origin             "${{ steps.base.outputs.port_sha }}:refs/heads/${PORT_BRANCH}"             "${{ steps.base.outputs.base_sha }}:refs/heads/${BASE_BRANCH}"
+
+      - name: Upload successful firmware
+        if: steps.merge.outputs.changed == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: WLEDMM-${{ env.WLEDMM_VERSION }}-ESP32-WROOM32-True32EQ
+          path: ${{ env.FIRMWARE_NAME }}
+          retention-days: 30
