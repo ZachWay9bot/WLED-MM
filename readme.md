@@ -19,6 +19,14 @@ This fork is created by members of the [Atuline/WLED](https://github.com/atuline
 
 More info here: <a href="https://mm.kno.wled.ge/moonmodules/what-is-moonmodules/">what-is-moonmodules</a>
 
+## ZachWay9bot fork: True 32-Band Audio EQ
+
+This fork's `mdev` branch includes the hardware-validated True 32-band AudioReactive spectrum implementation. Local ESP32 audio uses 32 FFT bands while the existing 16-band AudioSync wire protocol and legacy 16-band effects remain compatible.
+
+Included 32-band visualizations: **GEQ 32 Classic, GEQ 32 Center, GEQ 32 Peaks, GEQ 32 Waterfall and GEQ 32 Trace**. The audio path also includes a 25 Hz subsonic high-pass filter. The implementation is committed directly in C/C++; Python is used only for automated validation/tests, not for patching firmware source during the build.
+
+Architecture, frequency-bin mapping, compatibility and validation details are documented in [WLED-MM mdev True 32-Band EQ](docs/WLED-MM-mdev-True32EQ.md).
+
 <a href="https://www.paypal.com/donate?business=moonmodules@icloud.com"><img src="https://img.shields.io/badge/send%20me%20a%20small%20gift-paypal-blue.svg" alt="HTML tutorial" style="max-width: 100%;"></a>
 Donations will be used to buy WLED related hardware, software or drinks shared with the contributors of this repo.
 
