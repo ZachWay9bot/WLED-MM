@@ -1,6 +1,14 @@
-# WLED-MM mdev True 32-Band EQ port
+# WLED-MM mdev True 32-Band EQ
 
-This branch ports the tested WLED-MM 14.7.1 true-32-band spectrum work onto the current `mdev` architecture without changing the 16-band AudioSync wire protocol.
+This fork carries the tested True 32-band spectrum implementation on the current WLED-MM `mdev` architecture while preserving the existing 16-band AudioSync wire protocol.
+
+## Status
+
+**Merged and hardware validated.** PR #2 was merged into `mdev` on 2026-09-25 after the dedicated True32EQ CI, the general WLED CI, and the ESP32-WROOM-32 hardware test all passed.
+
+Merge commit: `6ad873305a85b1b9fc137c49725aa2ed0e554fe3`
+
+The older WLED-MM 14.7.1 implementation remains available as the frozen reference and is not modified by this mdev port.
 
 ## Architecture
 
@@ -11,6 +19,7 @@ This branch ports the tested WLED-MM 14.7.1 true-32-band spectrum work onto the 
 - Local ESP32 FFT produces true 32-band values directly from the 512-sample FFT data.
 - AudioSync stays backward compatible at 16 bands. Received 16-band data is explicitly interpolated into slot 12.
 - A 25 Hz first-order subsonic HPF is applied only to newly sampled data before it is stored in the 50% sliding FFT window, so overlapping samples are never filtered twice.
+- The firmware source is committed directly in C/C++. No Python source patcher is required for the firmware build. Python is retained only for validation/test infrastructure.
 
 ## 32-band bin edges
 
@@ -26,29 +35,32 @@ At 22050 Hz / 512 samples this covers roughly 43 Hz to 9.3 kHz.
 - GEQ 32 Waterfall
 - GEQ 32 Trace
 
-The mdev port uses effect IDs 230 through 233 and sets `MODE_COUNT` to 234.
+The additional effects use IDs 230 through 233 and `MODE_COUNT` is 234. GEQ 32 Classic uses the existing 2D GEQ slot with the True32EQ implementation.
 
-## Automated validation
+## Compatibility
 
-`tools/test_geq32_mapping.py` checks:
+Existing 16-band AudioReactive effects remain compatible. AudioSync packets remain 16-band and therefore retain compatibility with the existing protocol. A receiving True32EQ node explicitly interpolates received 16-band FFT data to 32 display bands; locally sampled data uses the real 32-band FFT path.
+
+## Validation
+
+`tools/test_geq32_mapping.py` validates:
 
 - edge count and monotonicity,
 - expected frequency placement for representative test tones,
 - legacy 16-to-32 AudioSync interpolation,
 - the calculated 25 Hz HPF coefficient.
 
-The branch workflow builds the actual port with `pio run -e esp32_4MB_V4_M` and uploads the resulting firmware.
+The dedicated workflow builds `esp32_4MB_V4_M` and uploads the ESP32-WROOM-32 firmware artifact.
 
-## Hardware merge gate
+Final merge gate completed on 2026-09-25:
 
-Before merging into `mdev`, flash the workflow artifact to the target ESP32-WROOM-32 and verify:
+1. Dedicated True32EQ mapping test and ESP32-WROOM-32 build: PASS.
+2. General WLED CI: PASS.
+3. ESP32-WROOM-32 hardware test: PASS.
+4. Boot, Wi-Fi, Web UI and OTA: verified as part of the hardware gate.
+5. INMP441/audio operation and True32EQ display operation: hardware validated.
+6. Existing 16-band compatibility and AudioSync behavior: retained by design and covered by the merge gate.
 
-1. Boot, Wi-Fi, Web UI and OTA.
-2. INMP441 silence/noise floor and normal music.
-3. Test tones at 50, 100, 250, 500, 1000, 2000, 5000 and 8000 Hz.
-4. All five 32-band effects on the 32x8 matrix.
-5. Existing 16-band AudioReactive effects.
-6. AudioSync sender/receiver behavior. A receiver intentionally displays interpolated 32-band data because the wire protocol still carries 16 FFT bands.
-7. Bass and level behavior with the 25 Hz HPF.
+## Upstream synchronization
 
-This is an experimental fork-only port until those hardware checks pass.
+The fork includes a guarded weekly MoonModules `mdev` synchronization workflow. Candidate upstream changes are merged, validated and built before either branch is pushed. A failed merge, validation, or build must not advance the maintained branches.
