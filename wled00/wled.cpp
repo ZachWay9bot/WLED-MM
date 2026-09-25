@@ -1444,31 +1444,50 @@ void WLED::handleConnection()
     //uint32_t heap = heap_caps_get_largest_free_block(0x1800); // WLEDMM: This is a better metric for free heap.
     uint32_t heap = getContiguousFreeHeap(); // WLEDMM: This is a better metric for free heap.
 #endif
-    if (heap < MIN_HEAP_CRIT_SIZE && lastHeap < MIN_HEAP_SIZE) { // WLEDMM allow 12% extra margin before "critical"
-      if (retryCount < 5) {  // WLEDMM avoid repeated disconnects
-        USER_PRINT(F("Heap too low! (step 2, force reconnect): "));
+    // Do not tear down WiFi/AP for a short-lived contiguous-heap dip.
+    // Audio, UDP and async networking can temporarily fragment internal DRAM even
+    // while total free heap is healthy. Keep the existing recovery actions, but
+    // require sustained pressure before escalating to a full WiFi reconnect.
+    static byte lowHeapSamples = 0;
+    static byte criticalHeapSamples = 0;
+
+    if (heap < MIN_HEAP_SIZE) {
+      if (lowHeapSamples < 255) lowHeapSamples++;
+      if (heap < MIN_HEAP_CRIT_SIZE) {
+        if (criticalHeapSamples < 255) criticalHeapSamples++;
+      } else {
+        criticalHeapSamples = 0;
+      }
+
+      // Stage 1 after two consecutive low readings (~10 s): release transient
+      // UDP/segment allocations. This preserves the existing first-line recovery.
+      if (lowHeapSamples == 2 && retryCount1 < 5) {
+        USER_PRINT(F("Heap low sustained (step 1, flush unread UDP): "));
+        USER_PRINTLN(heap);
+        strip.purgeSegments();
+        notifierUdp.flush();
+        rgbUdp.flush();
+        notifier2Udp.flush();
+        ntpUdp.flush();
+        errorFlag = ERR_LOW_MEM;
+        retryCount1++;
+      }
+
+      // Stage 2 only after six consecutive critical readings (~30 s). A single
+      // allocation burst must not make AP_BEHAVIOR_ALWAYS disappear.
+      if (criticalHeapSamples >= 6 && retryCount < 5) {
+        USER_PRINT(F("Heap critically low sustained (step 2, force reconnect): "));
         USER_PRINTLN(heap);
         forceReconnect = true;
-        strip.purgeSegments(true); // remove all but one segments from memory
-        // WLEDMM
+        strip.purgeSegments(true);
         errorFlag = ERR_LOW_MEM;
-        retryCount ++;
+        retryCount++;
+        criticalHeapSamples = 0; // require another sustained interval before retry
       }
-      errorFlag = ERR_LOW_MEM;
-    } else if ((heap < MIN_HEAP_SIZE) && (retryCount1 < 5)) {
-      USER_PRINT(F("Heap too low! (step 1, flush unread UDP): "));
-      USER_PRINTLN(heap);      
-      strip.purgeSegments();
-      notifierUdp.flush();
-      rgbUdp.flush();
-      notifier2Udp.flush();
-      ntpUdp.flush();
-      // WLEDMM
-      errorFlag = ERR_LOW_MEM;
-      retryCount = 1;
-      retryCount1++;
-    } else { 
-      retryCount = 0;  // WLEDMM memory OK - reset counter
+    } else {
+      lowHeapSamples = 0;
+      criticalHeapSamples = 0;
+      retryCount = 0;
       retryCount1 = 0;
     }
     lastHeap = heap;
