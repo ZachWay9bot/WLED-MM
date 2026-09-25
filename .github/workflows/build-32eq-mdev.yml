@@ -1,0 +1,43 @@
+name: Build mdev True 32EQ
+
+on:
+  push:
+    branches:
+      - mdev-32eq-port
+  pull_request:
+    branches:
+      - mdev
+  workflow_dispatch:
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Validate GEQ32 mapping
+        run: python3 tools/test_geq32_mapping.py
+
+      - name: Install PlatformIO
+        run: pip install -r requirements.txt
+
+      - name: Build ESP32-WROOM-32 4MB V4
+        env:
+          WLED_RELEASE: True
+        run: pio run -e esp32_4MB_V4_M
+
+      - name: Collect firmware
+        run: cp .pio/build/esp32_4MB_V4_M/firmware.bin WLEDMM_mdev_ESP32-WROOM32_True32EQ.bin
+
+      - name: Upload firmware artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: WLEDMM-mdev-ESP32-WROOM32-True32EQ
+          path: WLEDMM_mdev_ESP32-WROOM32_True32EQ.bin

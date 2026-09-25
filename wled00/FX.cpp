@@ -8454,111 +8454,239 @@ static void setFlatPixelXY(bool flatMode, int x, int y, uint32_t color, unsigned
   }
 }
 
-uint16_t mode_2DGEQ(void) { // By Will Tatam. Code reduction by Ewoud Wijma. Flat Mode added by softhack007
-  //if (!strip.isMatrix) return mode_oops(); // not a 2D set-up, not a problem
-  bool flatMode = !SEGMENT.is2D() || (SEGMENT.width() < 3) || (SEGMENT.height() < 3); // also use flat mode when less than 3 colums or rows
-
-  const int NUM_BANDS = map2(SEGMENT.custom1, 0, 255, 1, 16);
-  const int virtLength = SEGLEN;                                                               // for flat mode
-  const uint16_t cols = flatMode ? min(max(2, NUM_BANDS), (virtLength+1)/2) : SEGMENT.virtualWidth();
-  const uint16_t rows = flatMode ? virtLength / cols : SEGMENT.virtualHeight();
-  const unsigned offset = flatMode ? max(0, (virtLength - rows*cols +1) / 2) : 0;              // flatmode: always center effect
-
-  if ((cols <=1) || (rows <=1)) return mode_oops(); // too small
-
-  if (!SEGENV.allocateData(cols*sizeof(uint16_t))) return mode_oops(); //allocation failed
-  uint16_t *previousBarHeight = reinterpret_cast<uint16_t*>(SEGENV.data); //array of previous bar heights per frequency band
-
-  um_data_t *um_data = getAudioData();
-  uint8_t fftResult[NUM_GEQ_CHANNELS] = {0};
-  if (um_data->u_data != nullptr) memcpy(fftResult, um_data->u_data[2], sizeof(fftResult));  // WLEDMM buffer curent values
-
-  #ifdef SR_DEBUG
-  uint8_t samplePeak = *(uint8_t*)um_data->u_data[3];
-  #endif
-
-  if (SEGENV.call == 0) {
-    for (int i=0; i<cols; i++) previousBarHeight[i] = 0;
-    SEGMENT.setUpLeds(); // WLEDMM use lossless getPixelColor()
-    SEGMENT.fill(BLACK);
+// ---------------------------------------------------------------------------
+// WLED-MM true 32-band helpers/effects.
+// Slot 12 contains local true-32 FFT data. AudioSync receivers receive an
+// explicit 16->32 interpolation from the AudioReactive usermod.
+// ---------------------------------------------------------------------------
+static inline void geq32GetBands(uint8_t out[32]) {
+  memset(out,0,32);
+  um_data_t *u=getAudioData();
+  if (u && u->u_data && u->u_size>12 && u->u_data[12]) {
+    memcpy(out,u->u_data[12],32);
+    return;
   }
-
-  bool rippleTime = false;
-  if (strip.now - SEGENV.step >= (256U - SEGMENT.intensity)) {
-    SEGENV.step = strip.now;
-    rippleTime = true;
-  }
-
-  if (SEGENV.call == 0) SEGMENT.fill(BLACK);
-  int fadeoutDelay = (256 - SEGMENT.speed) / 64;
-  if ((fadeoutDelay <= 1 ) || ((SEGENV.call % fadeoutDelay) == 0)) SEGMENT.fadeToBlackBy(SEGMENT.speed);
-
-  uint16_t lastBandHeight = 0;  // WLEDMM: for smoothing out bars
-
-  //WLEDMM: evenly ditribute bands
-  float bandwidth = (float)cols / NUM_BANDS;
-  float remaining = bandwidth;
-  uint8_t band = 0;
-  for (int x=0; x < cols; x++) {
-    //WLEDMM if not enough remaining
-    if (remaining < 1) {band++; remaining+= bandwidth;} //increase remaining but keep the current remaining
-    remaining--; //consume remaining
-
-    // Serial.printf("x %d b %d n %d w %f %f\n", x, band, NUM_BANDS, bandwidth, remaining);
-    uint8_t frBand = ((NUM_BANDS < 16) && (NUM_BANDS > 1)) ? map(band, 0, NUM_BANDS - 1, 0, 15):band; // always use full range. comment out this line to get the previous behaviour.
-    // frBand = constrain(frBand, 0, 15); //WLEDMM can never be out of bounds (I think...)
-    uint16_t colorIndex = frBand * 17; //WLEDMM 0.255
-    uint16_t bandHeight = fftResult[frBand];  // WLEDMM we use the original ffResult, to preserve accuracy
-
-    // WLEDMM begin - smooth out bars
-    if ((x > 0) && (x < (cols-1)) && (SEGMENT.check2)) {
-      // get height of next (right side) bar
-      uint8_t nextband = (remaining < 1)? band +1: band;
-      nextband = constrain(nextband, 0, 15);  // just to be sure
-      frBand = ((NUM_BANDS < 16) && (NUM_BANDS > 1)) ? map(nextband, 0, NUM_BANDS - 1, 0, 15):nextband; // always use full range. comment out this line to get the previous behaviour.
-      uint16_t nextBandHeight = fftResult[frBand];
-      // smooth Band height
-      bandHeight = (7*bandHeight + 3*lastBandHeight + 3*nextBandHeight) / 12;   // yeees, its 12 not 13 (10% amplification)
-      bandHeight = constrain(bandHeight, 0, 255);   // remove potential over/underflows
-      colorIndex = map(x, 0, cols-1, 0, 255); //WLEDMM
+  if (u && u->u_data && u->u_data[2]) {
+    uint8_t *q=(uint8_t*)u->u_data[2];
+    for (uint8_t i=0;i<32;i++) {
+      const uint8_t a=i>>1;
+      const uint8_t b=min((uint8_t)(a+1),(uint8_t)15);
+      out[i]=(i&1)?(uint8_t)(((uint16_t)q[a]+q[b])>>1):q[a];
     }
-    lastBandHeight = bandHeight; // remember BandHeight (left side) for next iteration
-    uint16_t barHeight = map2(bandHeight, 0, 255, 0, rows); // Now we map bandHeight to barHeight. do not subtract -1 from rows here
-    // WLEDMM end
+  }
+}
 
-    if (barHeight > rows) barHeight = rows;                      // WLEDMM map() can "overshoot" due to rounding errors
-    if (barHeight > previousBarHeight[x]) previousBarHeight[x] = barHeight; //drive the peak up
+static inline uint8_t geq32BandForX(uint16_t x,uint16_t cols) {
+  if (cols<=1) return 0;
+  if (cols==32) return constrain((int)x,0,31);
+  return constrain((int)map(x,0,cols-1,0,31),0,31);
+}
 
-    uint32_t ledColor = BLACK;
-    if ((! SEGMENT.check1) && !flatMode && (barHeight > 0)) {  // use faster drawLine when single-color bars are needed
-      ledColor = SEGMENT.color_from_palette(colorIndex, false, PALETTE_SOLID_WRAP, 0);
-      SEGMENT.drawLine(int(x), max(0,int(rows)-barHeight), int(x), int(rows-1), ledColor, false); // max(0, ...) to prevent negative Y
+static inline uint32_t geq32RowColor(uint16_t yFromBottom,uint16_t rows) {
+  if (rows==8) return (yFromBottom<3)?GREEN:((yFromBottom<6)?YELLOW:RED);
+  const uint16_t z=(uint32_t)yFromBottom*8U/max((uint16_t)1,rows);
+  return (z<3)?GREEN:((z<6)?YELLOW:RED);
+}
+
+uint16_t mode_2DGEQ(void) {
+  const bool flatMode=!SEGMENT.is2D()||(SEGMENT.width()<3)||(SEGMENT.height()<3);
+  const int NUM_BANDS=map2(SEGMENT.custom1,0,255,1,32);
+  const int virtLength=SEGLEN;
+  const uint16_t cols=flatMode?min(max(2,NUM_BANDS),(virtLength+1)/2):SEGMENT.virtualWidth();
+  const uint16_t rows=flatMode?virtLength/cols:SEGMENT.virtualHeight();
+  const unsigned offset=flatMode?max(0,(virtLength-rows*cols+1)/2):0;
+  if (cols<=1||rows<=1) return mode_oops();
+
+  struct GEQ32ClassicData {
+    uint16_t level[32];
+    uint16_t peak[32];
+    uint16_t peakHold[32];
+    uint32_t lastMs;
+  };
+  if (!SEGENV.allocateData(sizeof(GEQ32ClassicData))) return mode_oops();
+  GEQ32ClassicData *st=reinterpret_cast<GEQ32ClassicData*>(SEGENV.data);
+
+  if (SEGENV.call==0) {
+    memset(st,0,sizeof(GEQ32ClassicData));
+    st->lastMs=strip.now;
+    SEGMENT.setUpLeds();
+  }
+
+  uint8_t v[32];
+  geq32GetBands(v);
+
+  static const uint16_t visualGainQ8[32]={
+    236,238,240,242,244,246,248,250,252,254,256,258,260,262,264,266,
+    268,270,272,274,276,278,280,282,284,286,288,290,292,294,296,298
+  };
+
+  uint32_t now=strip.now;
+  uint32_t dt=now-st->lastMs;
+  if (dt<1) dt=1;
+  if (dt>100) dt=100;
+  st->lastMs=now;
+
+  const uint16_t fallPerSec=1200+((uint32_t)SEGMENT.speed*7200U/255U);
+  const uint16_t fallStep=max((uint16_t)1,(uint16_t)((uint32_t)fallPerSec*dt/1000U));
+  const uint16_t peakHoldMs=(SEGMENT.intensity==0)?0:(40+((uint32_t)SEGMENT.intensity*1460U/255U));
+  const uint16_t peakFallStep=max((uint16_t)1,(uint16_t)(fallStep/3U));
+
+  for (uint8_t i=0;i<32;i++) {
+    int raw=((int)v[i]*(int)visualGainQ8[i])>>8;
+    if (raw>255) raw=255;
+    if (raw<2) raw=0;
+
+    uint16_t shaped=0;
+    if (raw>0) {
+      const float norm=(float)raw/255.0f;
+      shaped=(uint16_t)constrain((int)(sqrtf(norm)*255.0f+0.5f),0,255);
+    }
+
+    uint16_t target=(uint32_t)shaped*rows;
+    const uint16_t maxLevel=(uint32_t)rows*255U;
+    if (target>maxLevel) target=maxLevel;
+
+    if (target>=st->level[i]) st->level[i]=target;
+    else st->level[i]=(st->level[i]>fallStep)?st->level[i]-fallStep:0;
+
+    if (peakHoldMs==0) {
+      st->peak[i]=0;
+      st->peakHold[i]=0;
+    } else if (st->level[i]>st->peak[i]) {
+      st->peak[i]=st->level[i];
+      st->peakHold[i]=peakHoldMs;
+    } else if (st->peakHold[i]>dt) {
+      st->peakHold[i]-=dt;
     } else {
-    for (int y=0; y < barHeight; y++) {
-      if (SEGMENT.check1) //color_vertical / color bars toggle
-        colorIndex = map(y, 0, rows-1, 0, 255);
-
-      ledColor = SEGMENT.color_from_palette(colorIndex, false, PALETTE_SOLID_WRAP, 0);
-      setFlatPixelXY(flatMode, x, rows-1 - y, ledColor, cols, rows, offset);
-    } }
-    if (!flatMode && (SEGMENT.intensity < 255) && (previousBarHeight[x] > 0) && (previousBarHeight[x] < rows))  // WLEDMM avoid "overshooting" into other segments - disable ripple pixels in 1D mode 
-      setFlatPixelXY(flatMode, x, rows - previousBarHeight[x], (SEGCOLOR(2) != BLACK) ? SEGCOLOR(2) : ledColor, cols, rows, offset);
-
-    if (rippleTime && previousBarHeight[x]>0) previousBarHeight[x]--;    //delay/ripple effect
+      st->peakHold[i]=0;
+      st->peak[i]=(st->peak[i]>peakFallStep)?st->peak[i]-peakFallStep:0;
+      if (st->peak[i]<st->level[i]) st->peak[i]=st->level[i];
+    }
   }
 
-#ifdef SR_DEBUG
-  if (!flatMode) {
-  // WLEDMM: abuse top left/right pixels for peak detection debugging
-  SEGMENT.setPixelColorXY(cols-1, 0, (samplePeak > 0) ? GREEN : BLACK);
-  if (samplePeak > 0) SEGMENT.setPixelColorXY(0, 0, GREEN);
-  // WLEDMM end
+  SEGMENT.fill(BLACK);
+  const uint8_t n=constrain(NUM_BANDS,1,32);
+  for (uint16_t x=0;x<cols;x++) {
+    uint8_t band;
+    if (cols==32&&n==32) band=x;
+    else if (n==1) band=0;
+    else {
+      const uint16_t lb=map(x,0,cols-1,0,n-1);
+      band=(n<32)?map(lb,0,n-1,0,31):constrain((int)lb,0,31);
+    }
+
+    uint16_t h=(st->level[band]+254U)/255U;
+    if (h>rows) h=rows;
+    for (uint16_t y=0;y<h;y++)
+      setFlatPixelXY(flatMode,x,rows-1-y,geq32RowColor(y,rows),cols,rows,offset);
+
+    if (st->peak[band]>0) {
+      uint16_t py=(st->peak[band]-1U)/255U;
+      if (py>=rows) py=rows-1;
+      setFlatPixelXY(flatMode,x,rows-1-py,geq32RowColor(py,rows),cols,rows,offset);
+    }
   }
-#endif
   return FRAMETIME;
-} // mode_2DGEQ()
-static const char _data_FX_MODE_2DGEQ[] PROGMEM = "GEQ ☾@Fade speed,Ripple decay,# of bands,,,Color bars,Smooth bars ☾;!,,Peaks;!;12f;c1=255,c2=64,pal=11,si=0"; // Beatsin
+}
+static const char _data_FX_MODE_2DGEQ[] PROGMEM =
+  "GEQ 32 Classic ☾@Fall speed,Peak hold,# of bands;;;12f;sx=128,ix=96,c1=255,si=0";
 
+uint16_t mode_GEQ32Center(void) {
+  if (!SEGMENT.is2D()) return mode_oops();
+  const uint16_t cols=SEGMENT.virtualWidth(),rows=SEGMENT.virtualHeight();
+  if (cols<2||rows<2) return mode_oops();
+  uint8_t v[32]; geq32GetBands(v);
+  SEGMENT.fill(BLACK);
+  const uint16_t lower=rows/2,upper=rows-lower;
+  const uint16_t half=max((uint16_t)1,min(lower,upper));
+  for (uint16_t x=0;x<cols;x++) {
+    const uint8_t b=geq32BandForX(x,cols);
+    uint16_t h=((uint32_t)v[b]*half+254U)/255U;
+    if (h>half) h=half;
+    for (uint16_t d=0;d<h;d++) {
+      const uint32_t c=geq32RowColor(d*2,8);
+      if (lower>d) SEGMENT.setPixelColorXY(x,lower-1-d,c);
+      if (lower+d<rows) SEGMENT.setPixelColorXY(x,lower+d,c);
+    }
+  }
+  return FRAMETIME;
+}
+static const char _data_FX_MODE_GEQ32CENTER[] PROGMEM =
+  "GEQ 32 Center@;;;2f;si=0";
+
+uint16_t mode_GEQ32Peaks(void) {
+  if (!SEGMENT.is2D()) return mode_oops();
+  const uint16_t cols=SEGMENT.virtualWidth(),rows=SEGMENT.virtualHeight();
+  if (cols<2||rows<2) return mode_oops();
+  struct D { uint16_t p[32]; uint32_t last; };
+  if (!SEGENV.allocateData(sizeof(D))) return mode_oops();
+  D *st=(D*)SEGENV.data;
+  if (SEGENV.call==0) { memset(st,0,sizeof(D)); st->last=strip.now; }
+  uint32_t dt=strip.now-st->last; if (dt<1) dt=1; if (dt>100) dt=100; st->last=strip.now;
+  const uint16_t fall=max((uint16_t)1,(uint16_t)(((700U+(uint32_t)SEGMENT.speed*6500U/255U)*dt)/1000U));
+  uint8_t v[32]; geq32GetBands(v);
+  for (uint8_t i=0;i<32;i++) {
+    const uint16_t t=(uint32_t)v[i]*rows;
+    if (t>=st->p[i]) st->p[i]=t;
+    else st->p[i]=(st->p[i]>fall)?st->p[i]-fall:0;
+  }
+  SEGMENT.fill(BLACK);
+  for (uint16_t x=0;x<cols;x++) {
+    const uint8_t b=geq32BandForX(x,cols);
+    if (st->p[b]) {
+      uint16_t py=(st->p[b]-1U)/255U;
+      if (py>=rows) py=rows-1;
+      SEGMENT.setPixelColorXY(x,rows-1-py,geq32RowColor(py,rows));
+    }
+  }
+  return FRAMETIME;
+}
+static const char _data_FX_MODE_GEQ32PEAKS[] PROGMEM =
+  "GEQ 32 Peaks@Fall speed;;;2f;sx=128,si=0";
+
+uint16_t mode_GEQ32Waterfall(void) {
+  if (!SEGMENT.is2D()) return mode_oops();
+  const uint16_t cols=SEGMENT.virtualWidth(),rows=SEGMENT.virtualHeight();
+  if (cols<2||rows<2) return mode_oops();
+  struct D { uint8_t h[8][32]; uint32_t last; };
+  if (!SEGENV.allocateData(sizeof(D))) return mode_oops();
+  D *st=(D*)SEGENV.data;
+  if (SEGENV.call==0) { memset(st,0,sizeof(D)); st->last=0; SEGMENT.fill(BLACK); }
+  const uint16_t interval=35U+((uint32_t)(255-SEGMENT.speed)*165U/255U);
+  if (st->last==0||strip.now-st->last>=interval) {
+    st->last=strip.now;
+    for (int y=7;y>0;y--) memcpy(st->h[y],st->h[y-1],32);
+    geq32GetBands(st->h[0]);
+  }
+  SEGMENT.fill(BLACK);
+  const uint16_t showRows=min((uint16_t)8,rows);
+  for (uint16_t y=0;y<showRows;y++) for (uint16_t x=0;x<cols;x++) {
+    const uint8_t b=geq32BandForX(x,cols),a=st->h[y][b];
+    if (a<4) continue;
+    const uint32_t base=(a<86)?GREEN:((a<171)?YELLOW:RED);
+    SEGMENT.setPixelColorXY(x,rows-1-y,color_blend(BLACK,base,a));
+  }
+  return FRAMETIME;
+}
+static const char _data_FX_MODE_GEQ32WATERFALL[] PROGMEM =
+  "GEQ 32 Waterfall@Scroll speed;;;2f;sx=160,si=0";
+
+uint16_t mode_GEQ32Trace(void) {
+  if (!SEGMENT.is2D()) return mode_oops();
+  const uint16_t cols=SEGMENT.virtualWidth(),rows=SEGMENT.virtualHeight();
+  if (cols<2||rows<2) return mode_oops();
+  SEGMENT.fadeToBlackBy(80U+((uint32_t)(255-SEGMENT.intensity)*150U/255U));
+  uint8_t v[32]; geq32GetBands(v);
+  for (uint16_t x=0;x<cols;x++) {
+    const uint8_t b=geq32BandForX(x,cols);
+    uint16_t h=((uint32_t)v[b]*(rows-1)+127U)/255U;
+    if (h>=rows) h=rows-1;
+    SEGMENT.setPixelColorXY(x,rows-1-h,geq32RowColor(h,rows));
+  }
+  return FRAMETIME;
+}
+static const char _data_FX_MODE_GEQ32TRACE[] PROGMEM =
+  "GEQ 32 Trace@!,Persistence;;;2f;ix=160,si=0";
 
 /////////////////////////
 //  ** 2D Funky plank  //
@@ -12368,6 +12496,10 @@ void WS2812FX::setupEffectData() {
   addEffect(FX_MODE_2DDISTORTIONWAVES, &mode_2Ddistortionwaves, _data_FX_MODE_2DDISTORTIONWAVES);
 
   addEffect(FX_MODE_2DGEQ, &mode_2DGEQ, _data_FX_MODE_2DGEQ); // audio
+  addEffect(FX_MODE_GEQ32CENTER, &mode_GEQ32Center, _data_FX_MODE_GEQ32CENTER); // audio
+  addEffect(FX_MODE_GEQ32PEAKS, &mode_GEQ32Peaks, _data_FX_MODE_GEQ32PEAKS); // audio
+  addEffect(FX_MODE_GEQ32WATERFALL, &mode_GEQ32Waterfall, _data_FX_MODE_GEQ32WATERFALL); // audio
+  addEffect(FX_MODE_GEQ32TRACE, &mode_GEQ32Trace, _data_FX_MODE_GEQ32TRACE); // audio
 
   addEffect(FX_MODE_2DNOISE, &mode_2Dnoise, _data_FX_MODE_2DNOISE);
 
