@@ -37,6 +37,19 @@ At 22050 Hz / 512 samples this covers roughly 43 Hz to 9.3 kHz.
 
 The additional effects use IDs 230 through 233 and `MODE_COUNT` is 234. GEQ 32 Classic uses the existing 2D GEQ slot with the True32EQ implementation.
 
+## Network True32EQ AudioSync
+
+True32EQ nodes use an optional AudioSync V3 packet carrying all 32 FFT bands. The sender transmits the normal V2 16-band packet as well as the V3 32-band extension on the same AudioSync transport.
+
+This makes fallback automatic:
+
+- True32EQ sender + True32EQ receiver: receiver uses the real 32-band V3 data.
+- True32EQ sender + stock/legacy receiver: receiver ignores V3 and continues using the normal 16-band V2 packet.
+- Stock/legacy sender + True32EQ receiver: no V3 packet is present, so the receiver uses V2 and interpolates the 16 received bands to its 32 display bands.
+- Stock/legacy sender + stock/legacy receiver: unchanged standard 16-band AudioSync.
+
+The original V1/V2 packet layouts are not modified. The 32-band extension uses header `00003` and is additive, specifically to avoid breaking existing WLED/WLED-MM AudioSync nodes.
+
 ## Compatibility
 
 Existing 16-band AudioReactive effects remain compatible. AudioSync packets remain 16-band and therefore retain compatibility with the existing protocol. A receiving True32EQ node explicitly interpolates received 16-band FFT data to 32 display bands; locally sampled data uses the real 32-band FFT path.

@@ -1315,6 +1315,22 @@ class AudioReactive : public Usermod {
       float  FFT_MajorPeak;   //  04 Bytes  offset 40 - frequency (Hz) of largest FFT result
     };
 
+    // True32EQ AudioSync V3 - sent in addition to V2 so legacy receivers keep working.
+    // V3-aware receivers prefer these 32 real FFT bands when available.
+    struct __attribute__ ((packed)) audioSyncPacket_v3 {
+      char    header[6];
+      uint8_t pressure[2];
+      float   sampleRaw;
+      float   sampleSmth;
+      uint8_t samplePeak;
+      uint8_t frameCounter;
+      uint8_t fftResult[16];
+      uint8_t fftResult32[32];
+      uint16_t zeroCrossingCount;
+      float   FFT_Magnitude;
+      float   FFT_MajorPeak;
+    };
+
     // old "V1" audiosync struct - 83 Bytes payload, 88 bytes total - for backwards compatibility
     struct audioSyncPacket_v1 {
       char header[6];         //  06 Bytes
@@ -1883,6 +1899,33 @@ class AudioReactive : public Usermod {
         }
       }
       
+      // True32EQ extension: transmit a second, versioned packet with all 32 real bands.
+      // The V2 packet above is deliberately retained for stock/legacy WLED receivers.
+      audioSyncPacket_v3 transmitData32;
+      memset(reinterpret_cast<void *>(&transmitData32), 0, sizeof(transmitData32));
+      strncpy(transmitData32.header, "00003", 6);
+      memcpy(transmitData32.pressure, transmitData.pressure, sizeof(transmitData32.pressure));
+      transmitData32.sampleRaw = transmitData.sampleRaw;
+      transmitData32.sampleSmth = transmitData.sampleSmth;
+      transmitData32.samplePeak = transmitData.samplePeak;
+      transmitData32.frameCounter = frameCounter;
+      memcpy(transmitData32.fftResult, transmitData.fftResult, sizeof(transmitData32.fftResult));
+      memcpy(transmitData32.fftResult32, fftResult32, sizeof(transmitData32.fftResult32));
+      transmitData32.zeroCrossingCount = transmitData.zeroCrossingCount;
+      transmitData32.FFT_Magnitude = transmitData.FFT_Magnitude;
+      transmitData32.FFT_MajorPeak = transmitData.FFT_MajorPeak;
+
+      if (audioSyncBroadcast) {
+        IPAddress broadcastAddr((uint32_t)WiFi.localIP() | ~(uint32_t)WiFi.subnetMask());
+        if (fftUdp.beginPacket(broadcastAddr, audioSyncPort) != 0) {
+          fftUdp.write(reinterpret_cast<uint8_t *>(&transmitData32), sizeof(transmitData32));
+          fftUdp.endPacket();
+        }
+      } else if (fftUdp.beginMulticastPacket() != 0) {
+        fftUdp.write(reinterpret_cast<uint8_t *>(&transmitData32), sizeof(transmitData32));
+        fftUdp.endPacket();
+      }
+
       frameCounter++;
     } // transmitAudioData()
 #endif
@@ -1891,6 +1934,47 @@ class AudioReactive : public Usermod {
     }
     static bool isValidUdpSyncVersion_v1(const char *header) {
       return strncmp_P(header, UDP_SYNC_HEADER_v1, 6) == 0;
+    }
+    static bool isValidUdpSyncVersion_v3(const char *header) {
+      return strncmp(header, "00003", 6) == 0;
+    }
+
+    bool decodeAudioData_v3(int packetSize, uint8_t *fftBuff) {
+      if (packetSize != sizeof(audioSyncPacket_v3) || fftBuff == nullptr) return false;
+      audioSyncPacket_v3 p;
+      memcpy(&p, fftBuff, sizeof(p));
+      static uint8_t lastFrameCounter32 = 0;
+      static unsigned long last32Time = 0;
+      bool sequenceOK = (p.frameCounter == 0) || ((int8_t)(p.frameCounter-lastFrameCounter32) > 0);
+      if (millis()-last32Time >= AUDIOSYNC_IDLE_MS) sequenceOK = true;
+      if (!audioSyncSequence) sequenceOK = true;
+      if (!sequenceOK) return false;
+      lastFrameCounter32 = p.frameCounter;
+      last32Time = millis();
+
+      volumeSmth = fmaxf(p.sampleSmth, 0.0f);
+      volumeRaw = fmaxf(p.sampleRaw, 0.0f);
+#ifdef ARDUINO_ARCH_ESP32
+      sampleRaw = volumeRaw; sampleAvg = volumeSmth;
+      rawSampleAgc = volumeRaw; sampleAgc = volumeSmth; multAgc = 1.0f;
+#endif
+      autoResetPeak();
+      if (!samplePeak && p.samplePeak > 0) { samplePeak = true; timeOfPeak = millis(); }
+      memcpy(fftResult, p.fftResult, sizeof(fftResult));
+      memcpy(fftResult32, p.fftResult32, sizeof(fftResult32));
+      my_magnitude = fmaxf(p.FFT_Magnitude, 0.0f);
+      FFT_Magnitude = my_magnitude;
+      FFT_MajorPeak = constrain(p.FFT_MajorPeak, 1.0f, 11025.0f);
+#ifdef ARDUINO_ARCH_ESP32
+      FFT_MajPeakSmth = FFT_MajPeakSmth + 0.42f * (FFT_MajorPeak - FFT_MajPeakSmth);
+#endif
+      zeroCrossingCount = p.zeroCrossingCount;
+      if ((p.pressure[0] != 0) || (p.pressure[1] != 0))
+        soundPressure = float(p.pressure[0]) + float(p.pressure[1])/256.0f;
+      else soundPressure = volumeSmth;
+      agcSensitivity = 128.0f;
+      receivedFormat = 4; // True32EQ AudioSync V3
+      return true;
     }
 
     bool decodeAudioData(int packetSize, uint8_t *fftBuff) {
@@ -2035,7 +2119,9 @@ class AudioReactive : public Usermod {
 
         // Process each received packet: last value will persist, intermediate ones needed to update sequence counters
         if (packetSize > 0) {
-          if (packetSize == sizeof(audioSyncPacket) && (isValidUdpSyncVersion((const char *)fftUdpBuffer))) {
+          if (packetSize == sizeof(audioSyncPacket_v3) && (isValidUdpSyncVersion_v3((const char *)fftUdpBuffer))) {
+            haveFreshData |= decodeAudioData_v3(packetSize, fftUdpBuffer);
+          } else if (packetSize == sizeof(audioSyncPacket) && (isValidUdpSyncVersion((const char *)fftUdpBuffer))) {
             //receivedFormat = max(receivedFormat, 2); // format V2 or V2+ - will be set in decodeAudioData()
             haveFreshData |= decodeAudioData(packetSize, fftUdpBuffer);
           } else if (packetSize == sizeof(audioSyncPacket_v1) && (isValidUdpSyncVersion_v1((const char *)fftUdpBuffer))) {
