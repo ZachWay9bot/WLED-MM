@@ -407,7 +407,10 @@ static uint8_t strip_getPaletteBlend();  // forward declaration: little helper t
 #define FX_MODE_GEQ32WATERFALL          232
 #define FX_MODE_GEQ32TRACE              233
 
-#define MODE_COUNT                     234
+#define FX_MODE_ARCADEPARADE           234
+#define FX_MODE_PIXELINVADERS          235
+
+#define MODE_COUNT                     236
 
 typedef enum mapping1D2D {
   M12_Pixels = 0,
