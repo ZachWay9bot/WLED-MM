@@ -12485,8 +12485,62 @@ void WS2812FX::setupEffectData() {
   addEffect(FX_MODE_STARBURST_AR, &mode_starburst_audio, _data_FX_MODE_STARBURST_AR);
   addEffect(FX_MODE_FIREWORKS_AR, &mode_fireworks_audio, _data_FX_MODE_FIREWORKS_AR);
 
-  // --- 2D  effects ---
+  // --- Arcade sprite effects (original retro artwork; no third-party game assets) ---
 #ifndef WLED_DISABLE_2D
+static const uint8_t arcadeRunnerA[8] PROGMEM = {0x18,0x3C,0x7E,0x5A,0x3C,0x24,0x66,0x42};
+static const uint8_t arcadeRunnerB[8] PROGMEM = {0x18,0x3C,0x7E,0x5A,0x3C,0x24,0x42,0x24};
+static const uint8_t arcadeInvaderA[8] PROGMEM = {0x18,0x3C,0x7E,0xDB,0xFF,0x24,0x5A,0xA5};
+static const uint8_t arcadeInvaderB[8] PROGMEM = {0x18,0x3C,0x7E,0xDB,0xFF,0x5A,0x24,0x42};
+
+static void drawArcadeSprite(const uint8_t *sprite, int16_t ox, int16_t oy, uint32_t color) {
+  for (uint8_t y=0; y<8; y++) {
+    uint8_t bits = pgm_read_byte(sprite+y);
+    for (uint8_t x=0; x<8; x++) if (bits & (0x80 >> x)) SEGMENT.setPixelColorXY(ox+x, oy+y, color);
+  }
+}
+
+uint16_t mode_arcadeParade(void) {
+  if (!strip.isMatrix) return mode_oops();
+  const int16_t cols=SEGMENT.virtualWidth(), rows=SEGMENT.virtualHeight();
+  if (SEGENV.call==0) { SEGMENT.setUpLeds(); SEGENV.step=strip.now; SEGENV.aux0=cols; }
+  uint16_t interval=map(SEGMENT.speed,0,255,220,35);
+  if (strip.now-SEGENV.step < interval) return FRAMETIME;
+  SEGENV.step=strip.now;
+  SEGMENT.fill(SEGCOLOR(1));
+  int16_t x=(int16_t)SEGENV.aux0;
+  int16_t y=max(0,(rows-8)/2);
+  uint32_t col=SEGMENT.color_from_palette((uint8_t)(x*11),false,PALETTE_SOLID_WRAP,0);
+  drawArcadeSprite((x&1)?arcadeRunnerA:arcadeRunnerB,x,y,col);
+  if (--x < -8) x=cols;
+  SEGENV.aux0=(uint16_t)x;
+  return FRAMETIME;
+}
+static const char _data_FX_MODE_ARCADEPARADE[] PROGMEM = "Arcade Parade 🕹@Speed,Color;!,!;!;2";
+
+uint16_t mode_pixelInvaders(void) {
+  if (!strip.isMatrix) return mode_oops();
+  const int16_t cols=SEGMENT.virtualWidth(), rows=SEGMENT.virtualHeight();
+  if (SEGENV.call==0) { SEGMENT.setUpLeds(); SEGENV.step=strip.now; SEGENV.aux0=0; }
+  uint16_t interval=map(SEGMENT.speed,0,255,500,80);
+  if (strip.now-SEGENV.step < interval) return FRAMETIME;
+  SEGENV.step=strip.now;
+  SEGMENT.fill(SEGCOLOR(1));
+  const uint8_t *spr=(SEGENV.aux0&1)?arcadeInvaderA:arcadeInvaderB;
+  uint8_t phase=(SEGENV.aux0>>1)&3;
+  for (int16_t y=0; y<rows; y+=9) for (int16_t x=-4+phase; x<cols; x+=10) {
+    uint32_t col=SEGMENT.color_from_palette((uint8_t)(x*9+y*13),false,PALETTE_SOLID_WRAP,0);
+    drawArcadeSprite(spr,x,y,col);
+  }
+  SEGENV.aux0++;
+  return FRAMETIME;
+}
+static const char _data_FX_MODE_PIXELINVADERS[] PROGMEM = "Pixel Invaders 🕹@Speed,Color;!,!;!;2";
+#endif
+
+// --- 2D  effects ---
+#ifndef WLED_DISABLE_2D
+  addEffect(FX_MODE_ARCADEPARADE, &mode_arcadeParade, _data_FX_MODE_ARCADEPARADE);
+  addEffect(FX_MODE_PIXELINVADERS, &mode_pixelInvaders, _data_FX_MODE_PIXELINVADERS);
   addEffect(FX_MODE_2DSPACESHIPS, &mode_2Dspaceships, _data_FX_MODE_2DSPACESHIPS);
   addEffect(FX_MODE_2DCRAZYBEES, &mode_2Dcrazybees, _data_FX_MODE_2DCRAZYBEES);
   addEffect(FX_MODE_2DGHOSTRIDER, &mode_2Dghostrider, _data_FX_MODE_2DGHOSTRIDER);
