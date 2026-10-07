@@ -12485,7 +12485,51 @@ void WS2812FX::setupEffectData() {
   addEffect(FX_MODE_STARBURST_AR, &mode_starburst_audio, _data_FX_MODE_STARBURST_AR);
   addEffect(FX_MODE_FIREWORKS_AR, &mode_fireworks_audio, _data_FX_MODE_FIREWORKS_AR);
 
-  // --- Arcade sprite effects (original retro artwork; no third-party game assets) ---
+  // --- Compact audio visualizers ---
+#ifndef WLED_DISABLE_2D
+uint16_t mode_rgbSpots(void) {
+  if (!strip.isMatrix) return mode_oops();
+  um_data_t *a=getAudioData();
+  uint8_t *fft=(uint8_t*)a->u_data[2];
+  const int w=SEGMENT.virtualWidth(), h=SEGMENT.virtualHeight();
+  SEGMENT.fadeToBlackBy(map(SEGMENT.speed,0,255,180,55));
+  const uint8_t centers[3]={2,7,13};
+  for (uint8_t s=0;s<3;s++) {
+    uint16_t sum=0; for(uint8_t k=0;k<3;k++) sum+=fft[min(15,(int)centers[s]+k-1)];
+    uint8_t v=sum/3; int cx=((s+1)*w)/4, cy=h/2; int r=1+((uint16_t)v*max(1,min(w,h)/3))/255;
+    uint32_t col=SEGMENT.color_from_palette(s*85,false,PALETTE_SOLID_WRAP,0);
+    for(int y=cy-r;y<=cy+r;y++) for(int x=cx-r;x<=cx+r;x++) if((x-cx)*(x-cx)+(y-cy)*(y-cy)<=r*r) SEGMENT.setPixelColorXY(x,y,col);
+  }
+  return FRAMETIME;
+}
+static const char _data_FX_MODE_RGBSPOTS[] PROGMEM = "3 Spot Light Organ ♪@Fade,Sensitivity;!;!;2";
+
+uint16_t mode_audioWaveform(void) {
+  if (!strip.isMatrix) return mode_oops();
+  um_data_t *a=getAudioData(); uint8_t *fft=(uint8_t*)a->u_data[2];
+  const int w=SEGMENT.virtualWidth(), h=SEGMENT.virtualHeight(), mid=h/2;
+  SEGMENT.fadeToBlackBy(map(SEGMENT.speed,0,255,220,80));
+  for(int x=0;x<w;x++) {
+    uint8_t b=(uint32_t)x*15/max(1,w-1); int amp=((uint16_t)fft[b]*(h/2-1))/255;
+    int y=mid + ((x&1)?amp:-amp); uint32_t col=SEGMENT.color_from_palette((uint8_t)(x*255/max(1,w-1)),false,PALETTE_SOLID_WRAP,0);
+    SEGMENT.setPixelColorXY(x,constrain(y,0,h-1),col); if(y!=mid) SEGMENT.setPixelColorXY(x,mid,col);
+  }
+  return FRAMETIME;
+}
+static const char _data_FX_MODE_AUDIOWAVEFORM[] PROGMEM = "Audio Waveform ♪@Trail,Sensitivity;!;!;2";
+
+uint16_t mode_spectrumTrail(void) {
+  if (!strip.isMatrix) return mode_oops();
+  um_data_t *a=getAudioData(); uint8_t *fft=(uint8_t*)a->u_data[2];
+  const int w=SEGMENT.virtualWidth(), h=SEGMENT.virtualHeight();
+  SEGMENT.fadeToBlackBy(map(SEGMENT.speed,0,255,205,40));
+  for(int x=0;x<w;x++) { uint8_t b=(uint32_t)x*15/max(1,w-1); int bar=((uint16_t)fft[b]*h)/255; uint32_t col=SEGMENT.color_from_palette(b*16,false,PALETTE_SOLID_WRAP,0); for(int y=0;y<bar;y++) SEGMENT.setPixelColorXY(x,h-1-y,col); }
+  return FRAMETIME;
+}
+static const char _data_FX_MODE_SPECTRUMTRAIL[] PROGMEM = "Spectrum Trail ♪@Trail,Sensitivity;!;!;2";
+#endif
+
+// --- Arcade sprite effects (original retro artwork; no third-party game assets) ---
 #ifndef WLED_DISABLE_2D
 static const uint8_t arcadeRunnerA[8] PROGMEM = {0x18,0x3C,0x7E,0x5A,0x3C,0x24,0x66,0x42};
 static const uint8_t arcadeRunnerB[8] PROGMEM = {0x18,0x3C,0x7E,0x5A,0x3C,0x24,0x42,0x24};
@@ -12539,6 +12583,9 @@ static const char _data_FX_MODE_PIXELINVADERS[] PROGMEM = "Pixel Invaders 🕹@S
 
 // --- 2D  effects ---
 #ifndef WLED_DISABLE_2D
+  addEffect(FX_MODE_RGBSPOTS, &mode_rgbSpots, _data_FX_MODE_RGBSPOTS);
+  addEffect(FX_MODE_AUDIOWAVEFORM, &mode_audioWaveform, _data_FX_MODE_AUDIOWAVEFORM);
+  addEffect(FX_MODE_SPECTRUMTRAIL, &mode_spectrumTrail, _data_FX_MODE_SPECTRUMTRAIL);
   addEffect(FX_MODE_ARCADEPARADE, &mode_arcadeParade, _data_FX_MODE_ARCADEPARADE);
   addEffect(FX_MODE_PIXELINVADERS, &mode_pixelInvaders, _data_FX_MODE_PIXELINVADERS);
   addEffect(FX_MODE_2DSPACESHIPS, &mode_2Dspaceships, _data_FX_MODE_2DSPACESHIPS);
