@@ -414,7 +414,12 @@ static uint8_t strip_getPaletteBlend();  // forward declaration: little helper t
 #define FX_MODE_AUDIOWAVEFORM          237
 #define FX_MODE_SPECTRUMTRAIL          238
 
-#define MODE_COUNT                     239
+#define FX_MODE_STEREOVU               239
+#define FX_MODE_BASSPULSERINGS         240
+#define FX_MODE_NEONOSCILLOSCOPE       241
+#define FX_MODE_GEQ32MATRIX            242
+
+#define MODE_COUNT                     243
 
 typedef enum mapping1D2D {
   M12_Pixels = 0,
