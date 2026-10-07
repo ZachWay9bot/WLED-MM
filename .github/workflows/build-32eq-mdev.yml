@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - mdev-32eq-port
+      - feature/arcade-sprite-effects
   pull_request:
     branches:
       - mdev
