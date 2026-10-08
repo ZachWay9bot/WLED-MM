@@ -12308,6 +12308,95 @@ void WS2812FX::addEffect(uint8_t id, mode_ptr mode_fn, const char *mode_name) {
   DEBUG_PRINTF("addEffect(%d) => %s\n", id, mode_name);
 }
 
+#ifndef WLED_DISABLE_2D
+// --- Advanced audio visualizers ---
+
+uint16_t mode_stereoVU(void) {
+  if (!strip.isMatrix) return mode_oops();
+  um_data_t *a=getAudioData(); float vol=*(float*)a->u_data[0]; uint8_t *fft=(uint8_t*)a->u_data[2];
+  const int w=SEGMENT.virtualWidth(), h=SEGMENT.virtualHeight(); SEGMENT.fadeToBlackBy(170);
+  uint16_t lo=0,hi=0; for(uint8_t i=0;i<8;i++) lo+=fft[i]; for(uint8_t i=8;i<16;i++) hi+=fft[i];
+  uint8_t lv=constrain((int)((lo/8+vol)/2),0,255), rv=constrain((int)((hi/8+vol)/2),0,255);
+  int lh=(uint16_t)lv*h/255, rh=(uint16_t)rv*h/255;
+  for(int y=0;y<lh;y++) for(int x=0;x<w/2-1;x++) SEGMENT.setPixelColorXY(x,h-1-y,geq32RowColor(y,h));
+  for(int y=0;y<rh;y++) for(int x=w/2+1;x<w;x++) SEGMENT.setPixelColorXY(x,h-1-y,geq32RowColor(y,h));
+  return FRAMETIME;
+}
+static const char _data_FX_MODE_STEREOVU[] PROGMEM = "Stereo VU ♪@Decay,Sensitivity;!;!;2";
+
+uint16_t mode_bassPulseRings(void) {
+  if (!strip.isMatrix) return mode_oops(); um_data_t *a=getAudioData(); uint8_t *fft=(uint8_t*)a->u_data[2];
+  const int w=SEGMENT.virtualWidth(),h=SEGMENT.virtualHeight(),cx=w/2,cy=h/2; SEGMENT.fadeToBlackBy(map(SEGMENT.speed,0,255,210,70));
+  uint16_t bass=(fft[0]+fft[1]+fft[2])/3; int r=1+(uint32_t)bass*max(1,min(w,h)/2-1)/255;
+  uint32_t col=SEGMENT.color_from_palette(bass,false,PALETTE_SOLID_WRAP,0);
+  for(int y=0;y<h;y++) for(int x=0;x<w;x++){int dx=x-cx,dy=y-cy,d2=dx*dx+dy*dy;if(abs(d2-r*r)<=r+2) SEGMENT.setPixelColorXY(x,y,col);}
+  return FRAMETIME;
+}
+static const char _data_FX_MODE_BASSPULSERINGS[] PROGMEM = "Bass Pulse Rings ♪@Trail,Sensitivity;!;!;2";
+
+uint16_t mode_neonOscilloscope(void) {
+  if (!strip.isMatrix) return mode_oops(); um_data_t *a=getAudioData(); uint8_t *fft=(uint8_t*)a->u_data[2];
+  const int w=SEGMENT.virtualWidth(),h=SEGMENT.virtualHeight(),mid=h/2; SEGMENT.fadeToBlackBy(map(SEGMENT.speed,0,255,225,100));
+  int py=mid; for(int x=0;x<w;x++){uint8_t b=(uint32_t)x*15/max(1,w-1); int amp=(uint16_t)fft[b]*max(1,h/2-1)/255; int y=mid+((x&2)?amp:-amp); uint32_t col=SEGMENT.color_from_palette(x*7,false,PALETTE_SOLID_WRAP,0); SEGMENT.drawLine(max(0,x-1),py,x,constrain(y,0,h-1),col); py=constrain(y,0,h-1);}
+  SEGMENT.blur(24); return FRAMETIME;
+}
+static const char _data_FX_MODE_NEONOSCILLOSCOPE[] PROGMEM = "Neon Oscilloscope ♪@Trail,Sensitivity;!;!;2";
+
+uint16_t mode_geq32Matrix(void) {
+  if (!strip.isMatrix) return mode_oops(); uint8_t bands[32]; geq32GetBands(bands); const int w=SEGMENT.virtualWidth(),h=SEGMENT.virtualHeight(); SEGMENT.fill(BLACK);
+  for(int x=0;x<w;x++){uint8_t b=geq32BandForX(x,w); int bh=(uint16_t)bands[b]*h/255; for(int y=0;y<bh;y++) SEGMENT.setPixelColorXY(x,h-1-y,SEGMENT.color_from_palette(b*8,false,PALETTE_SOLID_WRAP,0));}
+  return FRAMETIME;
+}
+static const char _data_FX_MODE_GEQ32MATRIX[] PROGMEM = "32 Band Matrix ♪@Decay,Sensitivity;!;!;2";
+
+
+// --- Compact audio visualizers ---
+
+uint16_t mode_rgbSpots(void) {
+  if (!strip.isMatrix) return mode_oops();
+  um_data_t *a=getAudioData();
+  uint8_t *fft=(uint8_t*)a->u_data[2];
+  const int w=SEGMENT.virtualWidth(), h=SEGMENT.virtualHeight();
+  SEGMENT.fadeToBlackBy(map(SEGMENT.speed,0,255,180,55));
+  const uint8_t centers[3]={2,7,13};
+  for (uint8_t s=0;s<3;s++) {
+    uint16_t sum=0; for(uint8_t k=0;k<3;k++) sum+=fft[min(15,(int)centers[s]+k-1)];
+    uint8_t v=sum/3; int cx=((s+1)*w)/4, cy=h/2; int r=1+((uint16_t)v*max(1,min(w,h)/3))/255;
+    uint32_t col=SEGMENT.color_from_palette(s*85,false,PALETTE_SOLID_WRAP,0);
+    for(int y=cy-r;y<=cy+r;y++) for(int x=cx-r;x<=cx+r;x++) if((x-cx)*(x-cx)+(y-cy)*(y-cy)<=r*r) SEGMENT.setPixelColorXY(x,y,col);
+  }
+  return FRAMETIME;
+}
+static const char _data_FX_MODE_RGBSPOTS[] PROGMEM = "3 Spot Light Organ ♪@Fade,Sensitivity;!;!;2";
+
+uint16_t mode_audioWaveform(void) {
+  if (!strip.isMatrix) return mode_oops();
+  um_data_t *a=getAudioData(); uint8_t *fft=(uint8_t*)a->u_data[2];
+  const int w=SEGMENT.virtualWidth(), h=SEGMENT.virtualHeight(), mid=h/2;
+  SEGMENT.fadeToBlackBy(map(SEGMENT.speed,0,255,220,80));
+  for(int x=0;x<w;x++) {
+    uint8_t b=(uint32_t)x*15/max(1,w-1); int amp=((uint16_t)fft[b]*(h/2-1))/255;
+    int y=mid + ((x&1)?amp:-amp); uint32_t col=SEGMENT.color_from_palette((uint8_t)(x*255/max(1,w-1)),false,PALETTE_SOLID_WRAP,0);
+    SEGMENT.setPixelColorXY(x,constrain(y,0,h-1),col); if(y!=mid) SEGMENT.setPixelColorXY(x,mid,col);
+  }
+  return FRAMETIME;
+}
+static const char _data_FX_MODE_AUDIOWAVEFORM[] PROGMEM = "Audio Waveform ♪@Trail,Sensitivity;!;!;2";
+
+uint16_t mode_spectrumTrail(void) {
+  if (!strip.isMatrix) return mode_oops();
+  um_data_t *a=getAudioData(); uint8_t *fft=(uint8_t*)a->u_data[2];
+  const int w=SEGMENT.virtualWidth(), h=SEGMENT.virtualHeight();
+  SEGMENT.fadeToBlackBy(map(SEGMENT.speed,0,255,205,40));
+  for(int x=0;x<w;x++) { uint8_t b=(uint32_t)x*15/max(1,w-1); int bar=((uint16_t)fft[b]*h)/255; uint32_t col=SEGMENT.color_from_palette(b*16,false,PALETTE_SOLID_WRAP,0); for(int y=0;y<bar;y++) SEGMENT.setPixelColorXY(x,h-1-y,col); }
+  return FRAMETIME;
+}
+static const char _data_FX_MODE_SPECTRUMTRAIL[] PROGMEM = "Spectrum Trail ♪@Trail,Sensitivity;!;!;2";
+
+
+
+#endif
+
 void WS2812FX::setupEffectData() {
   // Solid must be first! (assuming vector is empty upon call to setup)
   _mode.push_back(&mode_static);
@@ -12485,6 +12574,16 @@ void WS2812FX::setupEffectData() {
   addEffect(FX_MODE_STARBURST_AR, &mode_starburst_audio, _data_FX_MODE_STARBURST_AR);
   addEffect(FX_MODE_FIREWORKS_AR, &mode_fireworks_audio, _data_FX_MODE_FIREWORKS_AR);
 
+
+#ifndef WLED_DISABLE_2D
+  addEffect(FX_MODE_STEREOVU, &mode_stereoVU, _data_FX_MODE_STEREOVU);
+  addEffect(FX_MODE_BASSPULSERINGS, &mode_bassPulseRings, _data_FX_MODE_BASSPULSERINGS);
+  addEffect(FX_MODE_NEONOSCILLOSCOPE, &mode_neonOscilloscope, _data_FX_MODE_NEONOSCILLOSCOPE);
+  addEffect(FX_MODE_GEQ32MATRIX, &mode_geq32Matrix, _data_FX_MODE_GEQ32MATRIX);
+  addEffect(FX_MODE_RGBSPOTS, &mode_rgbSpots, _data_FX_MODE_RGBSPOTS);
+  addEffect(FX_MODE_AUDIOWAVEFORM, &mode_audioWaveform, _data_FX_MODE_AUDIOWAVEFORM);
+  addEffect(FX_MODE_SPECTRUMTRAIL, &mode_spectrumTrail, _data_FX_MODE_SPECTRUMTRAIL);
+#endif
   // --- 2D  effects ---
 #ifndef WLED_DISABLE_2D
   addEffect(FX_MODE_2DSPACESHIPS, &mode_2Dspaceships, _data_FX_MODE_2DSPACESHIPS);
