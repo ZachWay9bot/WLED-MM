@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - mdev-32eq-port
+      - feature/audio-effects-only
   pull_request:
     branches:
       - mdev
