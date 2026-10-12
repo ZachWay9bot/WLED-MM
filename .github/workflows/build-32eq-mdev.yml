@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - mdev-32eq-port
+      - test/true32eq-no-artifx
   pull_request:
     branches:
       - mdev
