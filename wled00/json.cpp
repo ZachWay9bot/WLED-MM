@@ -978,7 +978,7 @@ void serializeInfo(JsonObject root)
 {
   root[F("ver")] = versionString;
   root[F("vid")] = VERSION;
-  //root[F("cn")] = F(WLED_CODENAME);    //WLEDMM removed
+  root[F("cn")] = F(WLED_CODENAME); // show build codename without changing OTA release metadata
   root[F("release")] = FPSTR(releaseString);
   root[F("rel")] = FPSTR(releaseString); //WLEDMM to add bin name
   root[F("repo")] = repoString;

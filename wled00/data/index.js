@@ -700,7 +700,7 @@ function populateInfo(i)
 	var vcn = "Small Step";  // WLED-MM 14.5.0, release Dec 2024
 //	if (i.ver.startsWith("0.14.")) vcn = "Hoshi";
 //	if (i.ver.includes("-bl")) vcn = "Supāku";
-	if (i.cn) vcn = i.cn;
+	// Custom firmware codename takes precedence over version-based defaults (see below).
 
 	//WLEDMM: add total heap and total PSRAM, and build number, add bin name
 	//if (i.ver.includes("0.14.0")) vcn = "Lupo";          // check for MM versioning scheme
@@ -712,6 +712,7 @@ function populateInfo(i)
 	if (i.ver.includes("14.5.")) vcn = "Small Step";
 	if (i.ver.includes("14.6.")) vcn = "New Light";
 	if ((i.ver.includes("14.7."))||(i.ver.includes("14.8."))) vcn = "Next Step";
+	if (i.cn) vcn = i.cn; // DEXTER (or another custom build codename) overrides defaults
 
 	cn += `v${i.ver} &nbsp;<i>"${vcn}"</i><p>(WLEDMM ${i.rel}.bin)</p><p><em>build ${i.vid}</em></p><table>
 ${urows}
