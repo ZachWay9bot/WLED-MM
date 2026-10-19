@@ -1260,7 +1260,13 @@ void WLED::initConnection()
   //if (strip.isUpdating()) USER_PRINTLN("WLED::initConnection: strip still updating.");
 #endif
 
-  WiFi.disconnect(true);        // close old connections
+  // Keep the ESP32 WiFi driver running during reconnect. A full radio teardown
+  // on every retry re-allocates lwIP/driver memory and fragments internal DRAM.
+#ifdef ARDUINO_ARCH_ESP32
+  WiFi.disconnect(false);
+#else
+  WiFi.disconnect(true);
+#endif
   delay(5);                     // wait for hardware to be ready
 #ifdef ESP8266
   WiFi.setPhyMode(force802_3g ? WIFI_PHY_MODE_11G : WIFI_PHY_MODE_11N);
@@ -1272,6 +1278,9 @@ void WLED::initConnection()
     WiFi.config(IPAddress((uint32_t)0), IPAddress((uint32_t)0), IPAddress((uint32_t)0));
   }
 
+#ifdef ARDUINO_ARCH_ESP32
+  if (lastReconnectAttempt != 0) wifiFullReconnects++;
+#endif
   lastReconnectAttempt = millis();
 
   if (!WLED_WIFI_CONFIGURED) {
@@ -1395,6 +1404,16 @@ void WLED::initInterfaces()
   }
   server.begin();
 
+#ifdef ARDUINO_ARCH_ESP32
+  // A new IP does not imply fresh UDP sockets. Release their old PCBs first;
+  // repeatedly calling begin() after WiFi loss otherwise retains allocations.
+  notifierUdp.stop();
+  rgbUdp.stop();
+  notifier2Udp.stop();
+  ntpUdp.stop();
+  udpConnected = udpRgbConnected = udp2Connected = ntpConnected = false;
+#endif
+
   if (udpPort > 0 && udpPort != ntpLocalPort) {
     udpConnected = notifierUdp.begin(udpPort);
     if (udpConnected && udpRgbPort != udpPort)
@@ -1420,6 +1439,9 @@ void WLED::handleConnection()
   static byte stacO = 0;
   static uint32_t lastHeap = UINT32_MAX;
   static unsigned long heapTime = 0;
+#ifdef ARDUINO_ARCH_ESP32
+  static uint8_t softWifiRetries = 0;
+#endif
   unsigned long now = millis();
 
   if (now < 2000 && (!WLED_WIFI_CONFIGURED || apBehavior == AP_BEHAVIOR_ALWAYS))
@@ -1431,50 +1453,39 @@ void WLED::handleConnection()
     return;
   }
 
-  static unsigned retryCount = 0;  // WLEDMM
-  [[maybe_unused]] static unsigned retryCount1 = 0;  // WLEDMM
-  #ifdef ARDUINO_ARCH_ESP32
-  // reconnect WiFi to clear stale allocations if heap gets too low
-  if ((now - heapTime > 5000) && !strip.isUpdating()) { // WLEDMM: updated with better logic for small heap available by block, not total. // WLEDMM trying to use a moment when the strip is idle
-
-#if defined(ARDUINO_ARCH_ESP32S2) || defined(WLED_ENABLE_HUB75MATRIX)
-    //uint32_t heap = ESP.getFreeHeap(); // WLEDMM works better on -S2; also avoid too-early panic on HUB75 builds
-    uint32_t heap = getFreeHeapSize(); // WLEDMM works better on -S2
-#else
-    //uint32_t heap = heap_caps_get_largest_free_block(0x1800); // WLEDMM: This is a better metric for free heap.
-    uint32_t heap = getContiguousFreeHeap(); // WLEDMM: This is a better metric for free heap.
-#endif
-    if (heap < MIN_HEAP_CRIT_SIZE && lastHeap < MIN_HEAP_SIZE) { // WLEDMM allow 12% extra margin before "critical"
-      if (retryCount < 5) {  // WLEDMM avoid repeated disconnects
-        USER_PRINT(F("Heap too low! (step 2, force reconnect): "));
-        USER_PRINTLN(heap);
-        forceReconnect = true;
-        strip.purgeSegments(true); // remove all but one segments from memory
-        // WLEDMM
-        errorFlag = ERR_LOW_MEM;
-        retryCount ++;
+#ifdef ARDUINO_ARCH_ESP32
+  // ERR_LOW_MEM (33) is a heap-pressure warning, NOT a WiFi-disconnect reason.
+  // Never reset the radio or destroy segment state to fix low contiguous heap:
+  // those operations allocate even more driver/FX memory, often making it worse.
+  static uint8_t lowHeapSamples = 0;
+  static uint32_t lastHeapWarning = 0;
+  if ((uint32_t)(now - heapTime) >= 5000 && !strip.isUpdating()) {
+    const uint32_t largest = getContiguousFreeHeap();
+    const uint32_t freeInternal = heap_caps_get_free_size(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL);
+    if (largest < MIN_HEAP_SIZE) {
+      if (lowHeapSamples < 255) lowHeapSamples++;
+      if (lowHeapSamples >= 2 && (lastHeapWarning == 0 || (uint32_t)(now - lastHeapWarning) >= 30000)) {
+        USER_PRINT(F("Low internal heap (largest/free): "));
+        USER_PRINT(largest);
+        USER_PRINT('/');
+        USER_PRINTLN(freeInternal);
+        lastHeapWarning = now;
+        if (largest < MIN_HEAP_CRIT_SIZE && errorFlag == ERR_NONE)
+          errorFlag = ERR_LOW_MEM;
+        // Flush queued datagrams only. Closing/recreating WiFi here is harmful.
+        if (udpConnected) notifierUdp.flush();
+        if (udpRgbConnected) rgbUdp.flush();
+        if (udp2Connected) notifier2Udp.flush();
+        if (ntpConnected) ntpUdp.flush();
       }
-      errorFlag = ERR_LOW_MEM;
-    } else if ((heap < MIN_HEAP_SIZE) && (retryCount1 < 5)) {
-      USER_PRINT(F("Heap too low! (step 1, flush unread UDP): "));
-      USER_PRINTLN(heap);      
-      strip.purgeSegments();
-      notifierUdp.flush();
-      rgbUdp.flush();
-      notifier2Udp.flush();
-      ntpUdp.flush();
-      // WLEDMM
-      errorFlag = ERR_LOW_MEM;
-      retryCount = 1;
-      retryCount1++;
-    } else { 
-      retryCount = 0;  // WLEDMM memory OK - reset counter
-      retryCount1 = 0;
+    } else {
+      lowHeapSamples = 0;
     }
-    lastHeap = heap;
+    lastHeap = largest;
     heapTime = now;
   }
-  #else
+#else
+  static unsigned retryCount = 0; // preserve the ESP8266 behaviour
   // reconnect WiFi to clear stale allocations if heap gets too low
   if (now - heapTime > 5000) {
     uint32_t heap = ESP.getFreeHeap();
@@ -1499,8 +1510,8 @@ void WLED::handleConnection()
     lastHeap = heap;
     heapTime = now;
   }
-  #endif
-  
+#endif
+
   byte stac = 0;
   if (apActive) {
 #ifdef ESP8266
@@ -1533,6 +1544,10 @@ void WLED::handleConnection()
   if (!Network.isConnected()) {
     if (interfacesInited) {
       USER_PRINTLN(F("Disconnected!"));
+#ifdef ARDUINO_ARCH_ESP32
+      wifiDisconnectEvents++;
+      wifiLastDisconnect = now;
+#endif
       interfacesInited = false;
       initConnection();
     }
@@ -1544,13 +1559,29 @@ void WLED::handleConnection()
     if (now - lastReconnectAttempt > ((stac) ? 300000 : 18000) && WLED_WIFI_CONFIGURED) {
       if (improvActive == 2) improvActive = 3;
       DEBUG_PRINTLN(F("Last reconnect too old."));
+#ifdef ARDUINO_ARCH_ESP32
+      // Retry association without repeatedly shutting the WiFi driver down.
+      // A full reconfiguration is still attempted after three soft retries.
+      if (!apActive && softWifiRetries < 3 && WiFi.reconnect()) {
+        softWifiRetries++;
+        wifiSoftReconnects++;
+        lastReconnectAttempt = now;
+      } else {
+        softWifiRetries = 0;
+        initConnection();
+      }
+#else
       initConnection();
+#endif
     }
     if (!apActive && now - lastReconnectAttempt > 12000 && (!wasConnected || apBehavior == AP_BEHAVIOR_NO_CONN)) {
       DEBUG_PRINTLN(F("Not connected AP."));
       initAP();
     }
   } else if (!interfacesInited) { //newly connected
+#ifdef ARDUINO_ARCH_ESP32
+    softWifiRetries = 0;
+#endif
     USER_PRINTLN("");
     USER_PRINT(F("Connected! IP address: http://"));
     USER_PRINT(Network.localIP());
