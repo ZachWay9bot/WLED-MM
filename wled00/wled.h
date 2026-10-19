@@ -592,6 +592,12 @@ WLED_GLOBAL bool forceReconnect _INIT(false);
 WLED_GLOBAL unsigned long lastReconnectAttempt _INIT(0);
 WLED_GLOBAL bool interfacesInited _INIT(false);
 WLED_GLOBAL bool wasConnected _INIT(false);
+#ifdef ARDUINO_ARCH_ESP32
+WLED_GLOBAL uint32_t wifiDisconnectEvents _INIT(0);     // DEXTER diagnostics
+WLED_GLOBAL uint32_t wifiSoftReconnects _INIT(0);      // successful WiFi.reconnect() calls
+WLED_GLOBAL uint32_t wifiFullReconnects _INIT(0);      // full initConnection() retries after initial connect
+WLED_GLOBAL unsigned long wifiLastDisconnect _INIT(0); // millis() of last detected link loss
+#endif
 
 // color
 WLED_GLOBAL byte lastRandomIndex _INIT(0);        // used to save last random color so the new one is not the same
