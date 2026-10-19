@@ -1278,6 +1278,9 @@ void WLED::initConnection()
     WiFi.config(IPAddress((uint32_t)0), IPAddress((uint32_t)0), IPAddress((uint32_t)0));
   }
 
+#ifdef ARDUINO_ARCH_ESP32
+  if (lastReconnectAttempt != 0) wifiFullReconnects++;
+#endif
   lastReconnectAttempt = millis();
 
   if (!WLED_WIFI_CONFIGURED) {
@@ -1541,6 +1544,10 @@ void WLED::handleConnection()
   if (!Network.isConnected()) {
     if (interfacesInited) {
       USER_PRINTLN(F("Disconnected!"));
+#ifdef ARDUINO_ARCH_ESP32
+      wifiDisconnectEvents++;
+      wifiLastDisconnect = now;
+#endif
       interfacesInited = false;
       initConnection();
     }
@@ -1557,6 +1564,7 @@ void WLED::handleConnection()
       // A full reconfiguration is still attempted after three soft retries.
       if (!apActive && softWifiRetries < 3 && WiFi.reconnect()) {
         softWifiRetries++;
+        wifiSoftReconnects++;
         lastReconnectAttempt = now;
       } else {
         softWifiRetries = 0;
