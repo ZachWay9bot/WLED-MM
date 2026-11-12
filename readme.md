@@ -27,6 +27,16 @@ Included 32-band visualizations: **GEQ 32 Classic, GEQ 32 Center, GEQ 32 Peaks, 
 
 Architecture, frequency-bin mapping, compatibility and validation details are documented in [WLED-MM mdev True 32-Band EQ](docs/WLED-MM-mdev-True32EQ.md).
 
+> [!IMPORTANT]
+> **DEXTER AudioSync compatibility: V3 must NOT replace V2 for legacy nodes.**
+> ESP8266 and other stock/legacy WLED/WLED-MM devices that only understand AudioSync V2 need the normal 16-band V2 stream. DEXTER/True32EQ ESP32 nodes can use AudioSync V3 for real 32-band FFT data, but legacy V2 support remains a hard compatibility requirement.
+>
+> - **V3 receiver available:** use the real 32-band V3 data.
+> - **Only V2 available:** keep receiving the standard 16-band V2 data and interpolate 16 → 32 locally for the 32-band display.
+> - **V2-only devices such as ESP8266:** must continue to receive V2 data; a V3-only sender would break them.
+>
+> The current implementation sends V2 and V3 additively on the same AudioSync transport. A lower-load DEXTER transport split is being investigated, but **any future change must preserve the V2 legacy stream**.
+
 <a href="https://www.paypal.com/donate?business=moonmodules@icloud.com"><img src="https://img.shields.io/badge/send%20me%20a%20small%20gift-paypal-blue.svg" alt="HTML tutorial" style="max-width: 100%;"></a>
 Donations will be used to buy WLED related hardware, software or drinks shared with the contributors of this repo.
 
