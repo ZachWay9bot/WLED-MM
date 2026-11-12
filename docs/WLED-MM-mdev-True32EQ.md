@@ -39,6 +39,20 @@ The additional effects use IDs 230 through 233 and `MODE_COUNT` is 234. GEQ 32 C
 
 ## Network True32EQ AudioSync
 
+> [!IMPORTANT]
+> **Hard compatibility rule: AudioSync V3 does not replace V2.**
+>
+> AudioSync V3 carries the real 32-band FFT data used by DEXTER/True32EQ ESP32 nodes. Legacy WLED/WLED-MM receivers, especially ESP8266 builds, only understand the normal V2 16-band packet. A sender that transmits V3 only would therefore leave those devices without usable AudioSync data.
+>
+> Required behavior:
+>
+> - **DEXTER/True32EQ ↔ DEXTER/True32EQ:** prefer V3 and use all 32 real FFT bands.
+> - **Legacy/ESP8266 sender → DEXTER receiver:** receive V2 and locally interpolate the 16 received bands to 32 display values. These are display interpolation, not 32 independent FFT measurements.
+> - **DEXTER sender → legacy/ESP8266 receiver:** the sender must keep a V2 stream available so the legacy receiver continues to work.
+> - **Legacy ↔ legacy:** unchanged V2 operation.
+>
+> The current implementation sends the unchanged V2 packet plus an additive V3 packet on the same AudioSync transport. Because this doubles AudioSync packet traffic for a True32EQ sender, the transport is being reviewed as part of DEXTER long-run stability work. A future optimization may separate or negotiate V2/V3 traffic, but **removing the V2 legacy path is not an acceptable optimization**.
+>
 True32EQ nodes use an optional AudioSync V3 packet carrying all 32 FFT bands. The sender transmits the normal V2 16-band packet as well as the V3 32-band extension on the same AudioSync transport.
 
 This makes fallback automatic:
