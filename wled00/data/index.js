@@ -682,6 +682,9 @@ function populateInfo(i)
 	//var heap = i.freeheap/1000;
 	var heap = Math.round(i.freeheap/100)/10;        // WLEDMM bugfix
 	var theap = (i.totalheap>0)?i.totalheap/1000:-1; //WLEDMM - total heap is not available on 8266
+	var largestHeap = i.maxalloc ? i.maxalloc/1000 : 0;
+	var heapFrag = (i.freeheap && i.maxalloc) ? Math.max(0, Math.round(100-(i.maxalloc*100/i.freeheap))) : 0;
+	var apModes = ["boot fallback","on disconnect","always","button","temporary"];
 	var flashsize = i.getflash/1000; //WLEDMM and Athom
 	flashsize = flashsize.toFixed(1); //WLEDMM and Athom
 	var pwr = i.leds.pwr;
@@ -700,7 +703,7 @@ function populateInfo(i)
 	var vcn = "Small Step";  // WLED-MM 14.5.0, release Dec 2024
 //	if (i.ver.startsWith("0.14.")) vcn = "Hoshi";
 //	if (i.ver.includes("-bl")) vcn = "Supāku";
-	if (i.cn) vcn = i.cn;
+	// Custom firmware codename takes precedence over version-based defaults (see below).
 
 	//WLEDMM: add total heap and total PSRAM, and build number, add bin name
 	//if (i.ver.includes("0.14.0")) vcn = "Lupo";          // check for MM versioning scheme
@@ -712,6 +715,7 @@ function populateInfo(i)
 	if (i.ver.includes("14.5.")) vcn = "Small Step";
 	if (i.ver.includes("14.6.")) vcn = "New Light";
 	if ((i.ver.includes("14.7."))||(i.ver.includes("14.8."))) vcn = "Next Step";
+	if (i.cn) vcn = i.cn; // DEXTER (or another custom build codename) overrides defaults
 
 	cn += `v${i.ver} &nbsp;<i>"${vcn}"</i><p>(WLEDMM ${i.rel}.bin)</p><p><em>build ${i.vid}</em></p><table>
 ${urows}
@@ -728,10 +732,17 @@ ${inforow("Signal strength",i.wifi.signal +"% ("+ i.wifi.rssi, " dBm)")}
 ${inforow("MAC address",i.mac)}
 ${inforow("Uptime",getRuntimeStr(i.uptime))}
 ${i.time?inforow("Time",i.time):""}
+${i.wifi && i.wifi.apmode!==undefined?inforow("AP / policy",(i.wifi.ap?"ON":"off")," / "+(apModes[i.wifi.apmode]||i.wifi.apmode)):""}
+${i.wifi && i.wifi.drops!==undefined?inforow("WiFi drops",i.wifi.drops):""}
+${i.wifi && i.wifi.softrec!==undefined?inforow("Reconnects","soft "+i.wifi.softrec," / full "+i.wifi.fullrec):""}
+${i.wifi && i.wifi.lastdrop?inforow("Last WiFi drop",getRuntimeStr(i.wifi.lastdrop)," ago"):""}
+${i.netdiag?inforow("UDP sockets","main "+(i.netdiag.udp?"ON":"off")+" / RGB "+(i.netdiag.rgb?"ON":"off")," / UDP2 "+(i.netdiag.udp2?"ON":"off")+" / NTP "+(i.netdiag.ntp?"ON":"off")):""}
 <!-- WLEDMM begin--> 
 <tr><td colspan=2><hr style="height:2px;border-width:0;color:SeaGreen;background-color:SeaGreen"></td></tr>
 ${inforow("Filesystem",i.fs.u + "/" + i.fs.t + " kB, " +Math.round(i.fs.u*100/i.fs.t) + "%")}
 ${theap>0?inforow("Heap ☾",((i.totalheap-i.freeheap)/1000).toFixed(0)+"/"+theap.toFixed(0)+" kB",", "+Math.round((i.totalheap-i.freeheap)/(10*theap))+"%"):inforow("Free heap",heap," kB")}  <!--WLEDMM different for 8266-->
+${largestHeap?inforow("Largest heap block",largestHeap.toFixed(1)," kB"):""}
+${largestHeap?inforow("Heap fragmentation",heapFrag," %"):""}
 ${i.minfreeheap?inforow("Max used heap ☾",((i.totalheap-i.minfreeheap)/1000).toFixed(0)+" kB",", "+Math.round((i.totalheap-i.minfreeheap)/(10*theap))+"%"):""} 
 ${i.psram?inforow("PSRAM ☾",((i.tpsram-i.psram)/1024).toFixed(0)+"/"+(i.tpsram/1024).toFixed(0)+" kB",", "+((i.tpsram-i.psram)*100.0/i.tpsram).toFixed(1)+"%"):""} 
 ${i.psusedram?inforow("Max used PSRAM ☾",((i.tpsram-i.psusedram)/1024).toFixed(0)+" kB",", "+((i.tpsram-i.psusedram)*100.0/i.tpsram).toFixed(1)+"%"):""} 

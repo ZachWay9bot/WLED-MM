@@ -978,7 +978,7 @@ void serializeInfo(JsonObject root)
 {
   root[F("ver")] = versionString;
   root[F("vid")] = VERSION;
-  //root[F("cn")] = F(WLED_CODENAME);    //WLEDMM removed
+  root[F("cn")] = F(WLED_CODENAME); // show build codename without changing OTA release metadata
   root[F("release")] = FPSTR(releaseString);
   root[F("rel")] = FPSTR(releaseString); //WLEDMM to add bin name
   root[F("repo")] = repoString;
@@ -1089,6 +1089,20 @@ void serializeInfo(JsonObject root)
   wifi_info[F("signal")] = getSignalQuality(qrssi);
   wifi_info[F("channel")] = WiFi.channel();
   wifi_info[F("ap")] = apActive;
+#ifdef ARDUINO_ARCH_ESP32
+  wifi_info[F("status")] = (int)WiFi.status();
+  wifi_info[F("iface")] = interfacesInited;
+  wifi_info[F("apmode")] = apBehavior;
+  wifi_info[F("drops")] = wifiDisconnectEvents;
+  wifi_info[F("softrec")] = wifiSoftReconnects;
+  wifi_info[F("fullrec")] = wifiFullReconnects;
+  wifi_info[F("lastdrop")] = wifiLastDisconnect ? ((millis() - wifiLastDisconnect) / 1000UL) : 0;
+  JsonObject netdiag = root.createNestedObject(F("netdiag"));
+  netdiag[F("udp")] = udpConnected;
+  netdiag[F("rgb")] = udpRgbConnected;
+  netdiag[F("udp2")] = udp2Connected;
+  netdiag[F("ntp")] = ntpConnected;
+#endif
 
 #if defined(ARDUINO_ARCH_ESP32) && !defined(WLEDMM_FILEWAIT)
   updateFSInfo(); // refresh flash usage info - may cause flicker unless we have the RMTHI driver

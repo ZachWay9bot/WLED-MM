@@ -318,7 +318,7 @@ using PSRAMDynamicJsonDocument = BasicJsonDocument<PSRAM_Allocator>;
 //WLED_GLOBAL char versionString[] _INIT(TOSTRING(WLED_VERSION));
 //WLED_GLOBAL char releaseString[] _INIT_PROGMEM(TOSTRING(WLED_RELEASE_NAME)); //WLEDMM: to show on update page // somehow this will not work if using "const char releaseString[]
 extern const __FlashStringHelper* repoString;                       // Github repository (if available)
-#define WLED_CODENAME "Hoshi"
+#define WLED_CODENAME "DEXTER" // True32EQ UDP V3 + WiFi heap-33 recovery
 
 // AP and OTA default passwords (for maximum security change them!)
 WLED_GLOBAL char apPass[65]  _INIT(WLED_AP_PASS);
@@ -592,6 +592,12 @@ WLED_GLOBAL bool forceReconnect _INIT(false);
 WLED_GLOBAL unsigned long lastReconnectAttempt _INIT(0);
 WLED_GLOBAL bool interfacesInited _INIT(false);
 WLED_GLOBAL bool wasConnected _INIT(false);
+#ifdef ARDUINO_ARCH_ESP32
+WLED_GLOBAL uint32_t wifiDisconnectEvents _INIT(0);     // DEXTER diagnostics
+WLED_GLOBAL uint32_t wifiSoftReconnects _INIT(0);      // successful WiFi.reconnect() calls
+WLED_GLOBAL uint32_t wifiFullReconnects _INIT(0);      // full initConnection() retries after initial connect
+WLED_GLOBAL unsigned long wifiLastDisconnect _INIT(0); // millis() of last detected link loss
+#endif
 
 // color
 WLED_GLOBAL byte lastRandomIndex _INIT(0);        // used to save last random color so the new one is not the same
