@@ -27,6 +27,17 @@ Included 32-band visualizations: **GEQ 32 Classic, GEQ 32 Center, GEQ 32 Peaks, 
 
 Architecture, frequency-bin mapping, compatibility and validation details are documented in [WLED-MM mdev True 32-Band EQ](docs/WLED-MM-mdev-True32EQ.md).
 
+
+> [!NOTE]
+> **DEXTER V11 NTP/DNS stability freeze — 2026-11-21**
+>
+> The current long-run reference is `freeze-dexter-v11-ntpfix-stallwatch-2026-11-21`.
+> It fixes the measured 1.6–15 s ESP32 main-loop stalls caused by synchronous NTP DNS resolution while retaining True32EQ, UDP/heap diagnostics and legacy AudioSync V2 compatibility alongside V3.
+>
+> Hardware validation before freeze: **8 h 41 min uptime**, **973,420 realtime UDP packets**, **0 local skips**, **0 mux misses**, **0 read errors**, **131 ms max UDP service gap**, **29 ms max UDP processing time**, and **0 WiFi drops/reconnects**. NTP DNS resolved once successfully and then stayed on the cached IP; the only >500 ms stall was a **1.523 s CONNECTION startup event**.
+>
+> Freeze details: [DEXTER V11 NTP/DNS + STALL-WATCH freeze](docs/DEXTER_V11_NTPFIX_STALLWATCH_FREEZE_2026-11-21.md).
+
 > [!IMPORTANT]
 > **DEXTER AudioSync compatibility: V3 must NOT replace V2 for legacy nodes.**
 > ESP8266 and other stock/legacy WLED/WLED-MM devices that only understand AudioSync V2 need the normal 16-band V2 stream. DEXTER/True32EQ ESP32 nodes can use AudioSync V3 for real 32-band FFT data, but legacy V2 support remains a hard compatibility requirement.
