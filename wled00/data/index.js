@@ -736,7 +736,25 @@ ${i.wifi && i.wifi.apmode!==undefined?inforow("AP / policy",(i.wifi.ap?"ON":"off
 ${i.wifi && i.wifi.drops!==undefined?inforow("WiFi drops",i.wifi.drops):""}
 ${i.wifi && i.wifi.softrec!==undefined?inforow("Reconnects","soft "+i.wifi.softrec," / full "+i.wifi.fullrec):""}
 ${i.wifi && i.wifi.lastdrop?inforow("Last WiFi drop",getRuntimeStr(i.wifi.lastdrop)," ago"):""}
-${i.netdiag?inforow("UDP sockets","main "+(i.netdiag.udp?"ON":"off")+" / RGB "+(i.netdiag.rgb?"ON":"off")," / UDP2 "+(i.netdiag.udp2?"ON":"off")+" / NTP "+(i.netdiag.ntp?"ON":"off")):""}
+${i.netdiag?inforow("UDP sockets","main "+(i.netdiag.udp?"ON":"off")+" / RGB "+(i.netdiag.rgb?"ON":"off")," / UDP2 "+(i.netdiag.udp2?"ON":"off")+" / NTP "+(i.netdiag.ntp?"ON":"off")):""}${i.netdiag&&i.netdiag.rtrx!==undefined?inforow("RT UDP RX",i.netdiag.rtrx+" packets"):""}
+${i.netdiag&&i.netdiag.rtskip!==undefined?inforow("RT UDP skipped",i.netdiag.rtskip+" local skips"):""}
+${i.netdiag&&i.netdiag.rtmux!==undefined?inforow("RT UDP mux misses",i.netdiag.rtmux):""}
+${i.netdiag&&i.netdiag.rtrderr!==undefined?inforow("RT UDP read errors",i.netdiag.rtrderr):""}
+${i.netdiag&&i.netdiag.rtgap!==undefined?inforow("RT UDP max packet gap",i.netdiag.rtgap+" ms"):""}
+${i.netdiag&&i.netdiag.rtsvcgap!==undefined?inforow("RT UDP max service gap",i.netdiag.rtsvcgap+" ms"):""}
+${i.netdiag&&i.netdiag.rtproc!==undefined?inforow("RT UDP max process",i.netdiag.rtproc+" ms"):""}
+${i.netdiag&&i.netdiag.rtage!==undefined?inforow("RT UDP last packet",i.netdiag.rtage+" ms ago"):""}
+${i.netdiag&&i.netdiag.ntpdnsstart!==undefined?inforow("NTP DNS","start "+i.netdiag.ntpdnsstart+" / ok "+i.netdiag.ntpdnsok+" / fail "+i.netdiag.ntpdnsfail):""}
+${i.netdiag&&i.netdiag.ntpip!==undefined?inforow("NTP cache",i.netdiag.ntpip+(i.netdiag.ntpdnsbusy?" / resolving":"")):""}
+${i.netdiag&&i.netdiag.ntpdnsage!==undefined&&i.netdiag.ntpdnsok?inforow("NTP DNS cache age",i.netdiag.ntpdnsage+" ms"):""}
+${i.stall?'<tr><td colspan=2><hr style="height:1px;border-width:0;color:SeaGreen;background-color:SeaGreen"></td></tr>':""}
+${i.stall?inforow("STALL watch",i.stall.ready?"ON":"FAILED"):""}
+${i.stall?inforow("STALL current",["IDLE","TIME/NTP","CONNECTION","REMOTE/SERIAL","UDP/TRANS","DMX/USERLOOP","USERMODS","IO/IR/ALEXA","FILE/CONFIG","OTA/PRESET","STRIP","NODE/NET","BUS/LEDMAP","WS/STATUS","LOOP TAIL"][i.stall.stage]||("stage "+i.stall.stage),i.stall.stageage+" ms"):""}
+${i.stall?inforow("STALL count",i.stall.count):""}
+${i.stall&&i.stall.count?inforow("STALL last",["IDLE","TIME/NTP","CONNECTION","REMOTE/SERIAL","UDP/TRANS","DMX/USERLOOP","USERMODS","IO/IR/ALEXA","FILE/CONFIG","OTA/PRESET","STRIP","NODE/NET","BUS/LEDMAP","WS/STATUS","LOOP TAIL"][i.stall.laststage]||("stage "+i.stall.laststage),i.stall.lastms+" ms"):""}
+${i.stall&&i.stall.count?inforow("STALL max",i.stall.maxms+" ms"):""}
+${i.stall&&i.stall.count?inforow("STALL heap snapshot",(i.stall.largest/1024).toFixed(1)+" kB largest"," / "+(i.stall.freeint/1024).toFixed(1)+" kB free int"):""}
+${i.stall&&i.stall.count?inforow("STALL last seen",i.stall.lastago+" ms ago"):""}
 <!-- WLEDMM begin--> 
 <tr><td colspan=2><hr style="height:2px;border-width:0;color:SeaGreen;background-color:SeaGreen"></td></tr>
 ${inforow("Filesystem",i.fs.u + "/" + i.fs.t + " kB, " +Math.round(i.fs.u*100/i.fs.t) + "%")}

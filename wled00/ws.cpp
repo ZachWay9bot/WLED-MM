@@ -171,6 +171,13 @@ void sendDataWs(AsyncWebSocketClient * client)
     // DEBUG_PRINTF("%s min free stack %d\n", pcTaskGetTaskName(NULL), uxTaskGetStackHighWaterMark(NULL)); //WLEDMM
   #endif
   if (len < 1) return; // WLEDMM do not allocate 0 size buffer
+#ifdef ARDUINO_ARCH_ESP32
+  const size_t dexWsLargestBefore = getContiguousFreeHeap();
+  if (dexWsLargestBefore < (len + 2048U)) {
+    releaseJSONBufferLock();
+    ws.closeAll(1013); ws.cleanupClients(0); errorFlag = ERR_LOW_WS_MEM; return;
+  }
+#endif
   AsyncWebSocketBuffer buffer(len);
   #ifdef ESP8266
   size_t heap2 = ESP.getFreeHeap();
@@ -257,6 +264,10 @@ static bool sendLiveLedsWs(uint32_t wsClient)  // WLEDMM added "static"
   size_t bufSize = pos + (used/n)*3;
   
   if ((bufSize < 1) || (used < 1)) return(false); // WLEDMM should not happen
+#ifdef ARDUINO_ARCH_ESP32
+  const size_t dexLiveLargestBefore = getContiguousFreeHeap();
+  if (dexLiveLargestBefore < (bufSize + 2048U)) { errorFlag = ERR_LOW_WS_MEM; ws_delay = millis(); return false; }
+#endif
   AsyncWebSocketBuffer wsBuf(bufSize);
   if (!wsBuf) {
     static unsigned long last_err_time = 0;

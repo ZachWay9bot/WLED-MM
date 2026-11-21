@@ -225,34 +225,62 @@ void handleNetworkTime()
   }
 }
 
+#ifdef ARDUINO_ARCH_ESP32
+static char dexNtpDnsRequestHost[33] = {0};
+static char dexNtpDnsCachedHost[33] = {0};
+static uint32_t dexNtpDnsRetryAfterMs = 0;
+static bool dexterNtpIpValid(const IPAddress& ip) { return ip[0] || ip[1] || ip[2] || ip[3]; }
+static void dexterNtpDnsTask(void *parameter)
+{
+  char host[33]; strlcpy(host, dexNtpDnsRequestHost, sizeof(host));
+  IPAddress resolved;
+  const int result = WiFi.hostByName(host, resolved);
+  const uint32_t done = millis();
+  if (result == 1 && dexterNtpIpValid(resolved) && strcmp(host, ntpServerName) == 0) {
+    ntpServerIP = resolved;
+    strlcpy(dexNtpDnsCachedHost, host, sizeof(dexNtpDnsCachedHost));
+    dexNtpDnsOk++; dexNtpDnsLastMs = done; dexNtpDnsRetryAfterMs = done + 5000UL;
+  } else if (strcmp(host, ntpServerName) == 0) {
+    dexNtpDnsFail++; dexNtpDnsRetryAfterMs = done + 60000UL;
+  }
+  dexNtpDnsBusy = false;
+  vTaskDelete(nullptr);
+}
+#endif
+
 void sendNTPPacket()
 {
-  if (!ntpServerIP.fromString(ntpServerName)) //see if server is IP or domain
-  {
-    #ifdef ESP8266
-    WiFi.hostByName(ntpServerName, ntpServerIP, 750);
-    #else
-    WiFi.hostByName(ntpServerName, ntpServerIP);
-    #endif
+#ifdef ARDUINO_ARCH_ESP32
+  IPAddress literalIP;
+  if (literalIP.fromString(ntpServerName)) {
+    ntpServerIP = literalIP;
+    strlcpy(dexNtpDnsCachedHost, ntpServerName, sizeof(dexNtpDnsCachedHost));
+  } else {
+    const uint32_t now = millis();
+    const bool hostMatches = (strcmp(dexNtpDnsCachedHost, ntpServerName) == 0);
+    bool cachedValid = hostMatches && dexterNtpIpValid(ntpServerIP);
+    if (!hostMatches && !dexNtpDnsBusy) {
+      ntpServerIP = IPAddress(0,0,0,0); dexNtpDnsCachedHost[0] = '\0'; cachedValid = false;
+    }
+    const bool refreshDue = cachedValid && dexNtpDnsLastMs && ((uint32_t)(now - dexNtpDnsLastMs) >= 21600000UL);
+    const bool retryDue = ((int32_t)(now - dexNtpDnsRetryAfterMs) >= 0);
+    if ((!cachedValid || refreshDue) && !dexNtpDnsBusy && retryDue) {
+      strlcpy(dexNtpDnsRequestHost, ntpServerName, sizeof(dexNtpDnsRequestHost));
+      dexNtpDnsBusy = true; dexNtpDnsStarts++;
+      const BaseType_t resolverCore = (xPortGetCoreID() == 0) ? 1 : 0;
+      const BaseType_t taskResult = xTaskCreatePinnedToCore(dexterNtpDnsTask, "dex_ntpdns", 3072, nullptr, 1, nullptr, resolverCore);
+      if (taskResult != pdPASS) { dexNtpDnsBusy = false; dexNtpDnsFail++; dexNtpDnsRetryAfterMs = now + 60000UL; }
+    }
+    if (!cachedValid) return;
   }
-
+#else
+  if (!ntpServerIP.fromString(ntpServerName)) WiFi.hostByName(ntpServerName, ntpServerIP, 750);
+#endif
   DEBUG_PRINTLN(F("send NTP"));
-  byte pbuf[NTP_PACKET_SIZE];
-  memset(pbuf, 0, NTP_PACKET_SIZE);
-
-  pbuf[0] = 0b11100011;   // LI, Version, Mode
-  pbuf[1] = 0;     // Stratum, or type of clock
-  pbuf[2] = 6;     // Polling Interval
-  pbuf[3] = 0xEC;  // Peer Clock Precision
-  // 8 bytes of zero for Root Delay & Root Dispersion
-  pbuf[12]  = 49;
-  pbuf[13]  = 0x4E;
-  pbuf[14]  = 49;
-  pbuf[15]  = 52;
-
-  ntpUdp.beginPacket(ntpServerIP, 123); //NTP requests are to port 123
-  ntpUdp.write(pbuf, NTP_PACKET_SIZE);
-  ntpUdp.endPacket();
+  byte pbuf[NTP_PACKET_SIZE]; memset(pbuf,0,NTP_PACKET_SIZE);
+  pbuf[0]=0b11100011; pbuf[1]=0; pbuf[2]=6; pbuf[3]=0xEC;
+  pbuf[12]=49; pbuf[13]=0x4E; pbuf[14]=49; pbuf[15]=52;
+  ntpUdp.beginPacket(ntpServerIP,123); ntpUdp.write(pbuf,NTP_PACKET_SIZE); ntpUdp.endPacket();
 }
 
 static bool isValidNtpResponse(byte * ntpPacket) {

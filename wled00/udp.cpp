@@ -295,6 +295,16 @@ void handleNotifications()
 {
   IPAddress localIP;
 
+#ifdef ARDUINO_ARCH_ESP32
+  const uint32_t rtUdpServiceNow = millis();
+  static uint32_t rtUdpPrevServiceMs = 0;
+  if (realtimeMode == REALTIME_MODE_UDP && rtUdpPrevServiceMs != 0) {
+    const uint32_t serviceGap = rtUdpServiceNow - rtUdpPrevServiceMs;
+    if (serviceGap > rtUdpMaxServiceGapMs) rtUdpMaxServiceGapMs = serviceGap;
+  }
+  rtUdpPrevServiceMs = rtUdpServiceNow;
+#endif
+
   //send second notification if enabled
   if(udpConnected && (notificationCount < udpNumRetries) && ((millis()-notificationSentTime) > 250)){
     notify(notificationSentCallMode,true);
@@ -389,6 +399,9 @@ void handleNotifications()
   uint16_t len;
   if (isSupp) len = notifier2Udp.read(udpIn, packetSize);
   else        len =  notifierUdp.read(udpIn, packetSize);
+#ifdef ARDUINO_ARCH_ESP32
+  if ((int)len != packetSize) rtUdpReadErrors++;
+#endif
 
   // WLED nodes info notifications
   if (isSupp && udpIn[0] == 255 && udpIn[1] == 1 && len >= 40) {
@@ -628,9 +641,23 @@ void handleNotifications()
   //UDP realtime: 1 warls 2 drgb 3 drgbw 4 dnrgb 5 dnrgbw
   if (udpIn[0] > 0 && udpIn[0] < 6)
   {
+#ifdef ARDUINO_ARCH_ESP32
+    const uint32_t rtUdpProcStart = millis();
+    rtUdpRxPackets++;
+    if (rtUdpLastRxMs != 0) {
+      const uint32_t rxGap = rtUdpProcStart - rtUdpLastRxMs;
+      if (rxGap > rtUdpMaxRxGapMs) rtUdpMaxRxGapMs = rxGap;
+    }
+    rtUdpLastRxMs = rtUdpProcStart;
+#endif
     realtimeIP = (isSupp) ? notifier2Udp.remoteIP() : notifierUdp.remoteIP();
     DEBUG_PRINTLN(realtimeIP);
-    if (packetSize < 2) return;
+    if (packetSize < 2) {
+#ifdef ARDUINO_ARCH_ESP32
+      rtUdpSkippedPackets++;
+#endif
+      return;
+    }
 
     if (udpIn[1] == 0)
     {
@@ -639,7 +666,12 @@ void handleNotifications()
     } else {
       realtimeLock(udpIn[1]*1000 +1, REALTIME_MODE_UDP);
     }
-    if (realtimeOverride && !(realtimeMode && useMainSegmentOnly)) return;
+    if (realtimeOverride && !(realtimeMode && useMainSegmentOnly)) {
+#ifdef ARDUINO_ARCH_ESP32
+      rtUdpSkippedPackets++;
+#endif
+      return;
+    }
 
     if (esp32SemTake(busDrawMux, 250) == pdTRUE) { // WLEDMM acquire drawing permission (wait max 200ms) before setting pixels
       uint16_t totalLen = strip.getLengthTotal();
@@ -675,8 +707,17 @@ void handleNotifications()
         }
       }
       esp32SemGive(busDrawMux); // end of critical section
+    } else {
+#ifdef ARDUINO_ARCH_ESP32
+      rtUdpMuxMisses++;
+      rtUdpSkippedPackets++;
+#endif
     }
     strip.show();
+#ifdef ARDUINO_ARCH_ESP32
+    const uint32_t rtUdpProcMs = millis() - rtUdpProcStart;
+    if (rtUdpProcMs > rtUdpMaxProcessMs) rtUdpMaxProcessMs = rtUdpProcMs;
+#endif
     return;
   }
 

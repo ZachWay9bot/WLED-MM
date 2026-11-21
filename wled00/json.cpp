@@ -1102,6 +1102,36 @@ void serializeInfo(JsonObject root)
   netdiag[F("rgb")] = udpRgbConnected;
   netdiag[F("udp2")] = udp2Connected;
   netdiag[F("ntp")] = ntpConnected;
+  netdiag[F("rtrx")] = rtUdpRxPackets;
+  netdiag[F("rtskip")] = rtUdpSkippedPackets;
+  netdiag[F("rtmux")] = rtUdpMuxMisses;
+  netdiag[F("rtrderr")] = rtUdpReadErrors;
+  netdiag[F("rtgap")] = rtUdpMaxRxGapMs;
+  netdiag[F("rtsvcgap")] = rtUdpMaxServiceGapMs;
+  netdiag[F("rtproc")] = rtUdpMaxProcessMs;
+  netdiag[F("rtage")] = rtUdpLastRxMs ? (millis() - rtUdpLastRxMs) : 0;
+  netdiag[F("ntpdnsstart")] = dexNtpDnsStarts;
+  netdiag[F("ntpdnsok")] = dexNtpDnsOk;
+  netdiag[F("ntpdnsfail")] = dexNtpDnsFail;
+  netdiag[F("ntpdnsbusy")] = dexNtpDnsBusy;
+  netdiag[F("ntpdnsage")] = dexNtpDnsLastMs ? (millis() - dexNtpDnsLastMs) : 0;
+  netdiag[F("ntpip")] = ntpServerIP.toString();
+  JsonObject stall = root.createNestedObject(F("stall"));
+  stall[F("ready")] = dexStallWatchReady;
+  stall[F("stage")] = dexLoopStage;
+  uint32_t dexStageAge = 0;
+  if (dexLoopStage && dexLoopStageSinceMs) {
+    const int32_t dexStageDelta = (int32_t)(millis() - dexLoopStageSinceMs);
+    if (dexStageDelta >= 0) dexStageAge = (uint32_t)dexStageDelta;
+  }
+  stall[F("stageage")] = dexStageAge;
+  stall[F("count")] = dexStallCount;
+  stall[F("laststage")] = dexLastStallStage;
+  stall[F("lastms")] = dexLastStallMs;
+  stall[F("maxms")] = dexMaxStallMs;
+  stall[F("largest")] = dexLastStallLargestHeap;
+  stall[F("freeint")] = dexLastStallFreeInternal;
+  stall[F("lastago")] = dexLastStallAtMs ? (millis() - dexLastStallAtMs) : 0;
 #endif
 
 #if defined(ARDUINO_ARCH_ESP32) && !defined(WLEDMM_FILEWAIT)

@@ -92,6 +92,52 @@ static int wledmm_get_tcp_stacksize(void) {
  * Main WLED class implementation. Mostly initialization and connection logic
  */
 
+#ifdef ARDUINO_ARCH_ESP32
+static inline void dexterSetStallStage(uint8_t id)
+{
+  dexLoopStage = 0;
+  dexLoopStageSinceMs = millis();
+  dexLoopStage = id;
+}
+#define DEX_STALL_STAGE(id) dexterSetStallStage(id)
+
+static void dexterLoopStallWatchTask(void *parameter)
+{
+  uint32_t observedSince = 0;
+  bool reported = false;
+  for (;;) {
+    const uint32_t since1 = dexLoopStageSinceMs;
+    const uint8_t stage = dexLoopStage;
+    const uint32_t since2 = dexLoopStageSinceMs;
+    if (since1 != since2) { vTaskDelay(pdMS_TO_TICKS(25)); continue; }
+    const uint32_t now = millis();
+    const int32_t signedAge = (int32_t)(now - since1);
+    if (stage == 0 || since1 == 0 || signedAge < 0) {
+      observedSince = since1; reported = false; vTaskDelay(pdMS_TO_TICKS(50)); continue;
+    }
+    if (since1 != observedSince) { observedSince = since1; reported = false; }
+    const uint32_t age = (uint32_t)signedAge;
+    if (age >= 500) {
+      const uint32_t largest = getContiguousFreeHeap();
+      const uint32_t freeInternal = heap_caps_get_free_size(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL);
+      if (!reported) {
+        dexStallCount++; dexLastStallStage = stage; dexLastStallMs = age;
+        dexLastStallLargestHeap = largest; dexLastStallFreeInternal = freeInternal;
+        dexLastStallAtMs = now; reported = true;
+      } else {
+        dexLastStallMs = age;
+        if (largest < dexLastStallLargestHeap) dexLastStallLargestHeap = largest;
+        if (freeInternal < dexLastStallFreeInternal) dexLastStallFreeInternal = freeInternal;
+      }
+      if (age > dexMaxStallMs) dexMaxStallMs = age;
+    }
+    vTaskDelay(pdMS_TO_TICKS(50));
+  }
+}
+#else
+#define DEX_STALL_STAGE(id) do {} while (0)
+#endif
+
 WLED::WLED()
 {
 }
@@ -130,26 +176,31 @@ void WLED::loop()
   static uint16_t avgStripMillis = 0;
   #endif
 
+  DEX_STALL_STAGE(1); // TIME / NTP
   handleTime();
   #ifndef WLED_DISABLE_INFRARED
   handleIR();        // 2nd call to function needed for ESP32 to return valid results -- should be good for ESP8266, too
   #endif
+  DEX_STALL_STAGE(2); // CONNECTION
   handleConnection();
   #ifndef WLED_DISABLE_ESPNOW
   handleRemote();
   #endif
+  DEX_STALL_STAGE(3); // SERIAL / IMPROV
   handleSerial();
   handleImprovWifiScan();
 
   #if defined(ARDUINO_ARCH_ESP32) && defined(WLEDMM_PROTECT_SERVICE)  // WLEDMM experimental: handleNotifications() calls strip.show(); handleTransitions modifies segments
   if (!suspendStripService) {
   #endif
+    DEX_STALL_STAGE(4); // UDP / TRANSITIONS
     handleNotifications();
     handleTransitions();
   #if defined(ARDUINO_ARCH_ESP32) && defined(WLEDMM_PROTECT_SERVICE)  // WLEDMM end 
   }
   #endif
 
+  DEX_STALL_STAGE(5); // DMX / USERLOOP
 #ifdef WLED_ENABLE_DMX
   handleDMXOutput();
 #endif
@@ -161,6 +212,7 @@ void WLED::loop()
   #ifdef WLED_DEBUG
   unsigned long usermodMillis = millis();
   #endif
+  DEX_STALL_STAGE(6); // USERMODS
   usermods.loop();
   #ifdef WLED_DEBUG
   usermodMillis = millis() - usermodMillis;
@@ -169,6 +221,7 @@ void WLED::loop()
   #endif
 
   yield();
+  DEX_STALL_STAGE(7); // IO / IR / ALEXA
   handleIO();
   #ifndef WLED_DISABLE_INFRARED
   handleIR();
@@ -191,6 +244,7 @@ void WLED::loop()
   }
   #endif
 
+  DEX_STALL_STAGE(8); // FILE / CONFIG
   if (doSerializeConfig)
   {   
     serializeConfig();
@@ -214,6 +268,7 @@ void WLED::loop()
     #ifndef WLED_DISABLE_OTA
     if (WLED_CONNECTED && aOtaEnabled && !otaLock && correctPIN) ArduinoOTA.handle();
     #endif
+    DEX_STALL_STAGE(9); // OTA / PLAYLIST / PRESETS
     handleNightlight();
     handlePlaylist();
 #ifdef ARDUINO_ARCH_ESP32
@@ -255,6 +310,7 @@ void WLED::loop()
       static unsigned long lastTimeService = 0; // WLEDMM needed to remove stale lock
       if (!suspendStripService && !doInitBusses && !loadLedmap) { // WLEDMM prevent effect drawing while strip or segments are being updated
 #endif
+        DEX_STALL_STAGE(10); // STRIP SERVICE
         strip.service();
 #if defined(ARDUINO_ARCH_ESP32) && defined(WLEDMM_PROTECT_SERVICE)
         lastTimeService = millis();
@@ -299,6 +355,7 @@ void WLED::loop()
     #endif
     yield();
     // refresh WLED nodes list
+    DEX_STALL_STAGE(11); // NODE / NET PERIODIC
     refreshNodeList();
     if (nodeBroadcastEnabled) sendSysInfoUDP();
     yield();
@@ -312,6 +369,7 @@ void WLED::loop()
 
   //LED settings have been saved, re-init busses
   //This code block causes severe FPS drop on ESP32 with the original "if (busConfigs[0] != nullptr)" conditional. Investigate!
+  DEX_STALL_STAGE(12); // BUS REINIT / LEDMAP
   if (doInitBusses) {
     unsigned long waitStart = millis();                                             // WLEDMM: to avoid crash,
     while (strip.isUpdating() && (millis() - waitStart < 250)) {yield(); delay(5);} // wait a bit until busses are idle (max 250ms)
@@ -351,6 +409,7 @@ void WLED::loop()
   #if defined(ARDUINO_ARCH_ESP32) && defined(WLEDMM_PROTECT_SERVICE)  // WLEDMM experimental: pause handleWs while strip/segment data might be inconsistent
   if (!suspendStripService)
   #endif
+  DEX_STALL_STAGE(13); // WEBSOCKET / STATUS
   handleWs();
   handleStatusLED();
 
@@ -432,7 +491,9 @@ void WLED::loop()
     debugTime = millis();
   }
 #endif        // WLED_DEBUG_HEAP
+  DEX_STALL_STAGE(14); // LOOP TAIL / TICK
   toki.resetTick();
+  DEX_STALL_STAGE(0);
 
 #if WLED_WATCHDOG_TIMEOUT > 0
   // we finished our mainloop, reset the watchdog timer
@@ -1059,6 +1120,15 @@ void WLED::setup()
   if ((gammaCorrectVal < 0.999f) || (gammaCorrectVal > 3.0f)) calcGammaTable(1.0f); // no gamma => create linear LUT
   else calcGammaTable(gammaCorrectVal);
 
+#ifdef ARDUINO_ARCH_ESP32
+  if (!dexStallWatchReady) {
+    const BaseType_t dexObserverCore = (xPortGetCoreID() == 0) ? 1 : 0;
+    const BaseType_t dexTaskResult = xTaskCreatePinnedToCore(
+        dexterLoopStallWatchTask, "dex_stall", 2048, nullptr, 1, nullptr, dexObserverCore);
+    dexStallWatchReady = (dexTaskResult == pdPASS);
+  }
+#endif
+
   USER_PRINTLN(F("WLED initialization done.\n"));
   delay(50);
   // repeat Ada prompt
@@ -1118,7 +1188,11 @@ void WLED::initAP(bool resetAP)
   USER_PRINT(F("Opening access point "));  // WLEDMM
   USER_PRINTLN(apSSID);                    // WLEDMM
   WiFi.softAPConfig(IPAddress(4, 3, 2, 1), IPAddress(4, 3, 2, 1), IPAddress(255, 255, 255, 0));
-  WiFi.softAP(apSSID, apPass, apChannel, apHide, 8); // WLED-MM allow up to 8 clients for ad-hoc "in the field" syncing.
+  if (!WiFi.softAP(apSSID, apPass, apChannel, apHide, 8)) { // WLED-MM allow up to 8 clients for ad-hoc syncing
+    USER_PRINTLN(F("Failed to start access point."));
+    apActive = false;
+    return;
+  }
   #if defined(LOLIN_WIFI_FIX) && (defined(ARDUINO_ARCH_ESP32C3) || defined(ARDUINO_ARCH_ESP32S2) || defined(ARDUINO_ARCH_ESP32S3))
   WiFi.setTxPower(WIFI_POWER_8_5dBm);
   #endif
@@ -1282,6 +1356,15 @@ void WLED::initConnection()
   if (lastReconnectAttempt != 0) wifiFullReconnects++;
 #endif
   lastReconnectAttempt = millis();
+
+#ifdef ARDUINO_ARCH_ESP32
+  // DEXTER FreezeFix: restore ALWAYS AP without touching segment state.
+  if (WLED_WIFI_CONFIGURED && apBehavior == AP_BEHAVIOR_ALWAYS &&
+      (!apActive || !(WiFi.getMode() & WIFI_AP))) {
+    USER_PRINTLN(F("Always-on AP missing during init; restoring."));
+    initAP();
+  }
+#endif
 
   if (!WLED_WIFI_CONFIGURED) {
     USER_PRINTLN(F("No WiFi connection configured."));  // WLEDMM
@@ -1509,6 +1592,18 @@ void WLED::handleConnection()
     } else retryCount = 0;  // WLEDMM memory OK - reset counter
     lastHeap = heap;
     heapTime = now;
+  }
+#endif
+
+#ifdef ARDUINO_ARCH_ESP32
+  // DEXTER FreezeFix: recover vanished ALWAYS AP without forced reconnect.
+  if (apBehavior == AP_BEHAVIOR_ALWAYS && (!apActive || !(WiFi.getMode() & WIFI_AP))) {
+    static unsigned long lastApRestoreAttempt = 0;
+    if ((uint32_t)(now - lastApRestoreAttempt) >= 10000) {
+      lastApRestoreAttempt = now;
+      USER_PRINTLN(F("Always-on AP missing; restoring."));
+      initAP();
+    }
   }
 #endif
 

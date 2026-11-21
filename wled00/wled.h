@@ -597,6 +597,33 @@ WLED_GLOBAL uint32_t wifiDisconnectEvents _INIT(0);     // DEXTER diagnostics
 WLED_GLOBAL uint32_t wifiSoftReconnects _INIT(0);      // successful WiFi.reconnect() calls
 WLED_GLOBAL uint32_t wifiFullReconnects _INIT(0);      // full initConnection() retries after initial connect
 WLED_GLOBAL unsigned long wifiLastDisconnect _INIT(0); // millis() of last detected link loss
+WLED_GLOBAL uint32_t rtUdpRxPackets       _INIT(0);
+WLED_GLOBAL uint32_t rtUdpSkippedPackets  _INIT(0);
+WLED_GLOBAL uint32_t rtUdpMuxMisses       _INIT(0);
+WLED_GLOBAL uint32_t rtUdpReadErrors      _INIT(0);
+WLED_GLOBAL uint32_t rtUdpMaxRxGapMs      _INIT(0);
+WLED_GLOBAL uint32_t rtUdpMaxServiceGapMs _INIT(0);
+WLED_GLOBAL uint32_t rtUdpMaxProcessMs    _INIT(0);
+WLED_GLOBAL uint32_t rtUdpLastRxMs        _INIT(0);
+
+// DEXTER STALL-WATCH
+WLED_GLOBAL volatile uint8_t  dexLoopStage             _INIT(0);
+WLED_GLOBAL volatile uint32_t dexLoopStageSinceMs      _INIT(0);
+WLED_GLOBAL volatile uint32_t dexStallCount            _INIT(0);
+WLED_GLOBAL volatile uint8_t  dexLastStallStage        _INIT(0);
+WLED_GLOBAL volatile uint32_t dexLastStallMs           _INIT(0);
+WLED_GLOBAL volatile uint32_t dexMaxStallMs            _INIT(0);
+WLED_GLOBAL volatile uint32_t dexLastStallLargestHeap  _INIT(0);
+WLED_GLOBAL volatile uint32_t dexLastStallFreeInternal _INIT(0);
+WLED_GLOBAL volatile uint32_t dexLastStallAtMs         _INIT(0);
+WLED_GLOBAL volatile bool     dexStallWatchReady       _INIT(false);
+
+// DEXTER NTP/DNS non-blocking resolver diagnostics
+WLED_GLOBAL volatile bool     dexNtpDnsBusy             _INIT(false);
+WLED_GLOBAL volatile uint32_t dexNtpDnsStarts           _INIT(0);
+WLED_GLOBAL volatile uint32_t dexNtpDnsOk               _INIT(0);
+WLED_GLOBAL volatile uint32_t dexNtpDnsFail             _INIT(0);
+WLED_GLOBAL volatile uint32_t dexNtpDnsLastMs           _INIT(0);
 #endif
 
 // color
