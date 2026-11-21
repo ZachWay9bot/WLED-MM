@@ -10,6 +10,31 @@ Merge commit: `6ad873305a85b1b9fc137c49725aa2ed0e554fe3`
 
 The older WLED-MM 14.7.1 implementation remains available as the frozen reference and is not modified by this mdev port.
 
+
+### DEXTER V11 NTP/DNS stability freeze — 2026-11-21
+
+The current DEXTER long-run stability reference is frozen on branch `freeze-dexter-v11-ntpfix-stallwatch-2026-11-21`.
+
+The freeze fixes a measured ESP32 main-loop stall in the NTP path. The original implementation could call `WiFi.hostByName()` synchronously from `sendNTPPacket()`; field diagnostics captured recurring `TIME/NTP` stalls around 1.6 s and occasional UDP service gaps around 15 s. V11 moves DNS resolution to a low-priority FreeRTOS task, caches the resolved NTP address, refreshes it in the background every six hours, and backs off failed lookups for 60 seconds.
+
+The same freeze retains the direct realtime UDP counters, main-loop stall watcher, ARTIFX RAM saving, always-on AP recovery, safe Error-33 behavior, and WebSocket contiguous-heap guard.
+
+Hardware validation immediately before freeze:
+
+- Uptime: **8 h 41 min**.
+- Realtime UDP packets: **973,420**.
+- Local UDP skips / mux misses / read errors: **0 / 0 / 0**.
+- Maximum realtime UDP service gap: **131 ms**.
+- Maximum realtime UDP packet processing time: **29 ms**.
+- WiFi drops / soft reconnects / full reconnects: **0 / 0 / 0**.
+- NTP DNS: **1 start / 1 success / 0 failures**, then cached address reuse.
+- Stall watcher: **1 stall**, `CONNECTION`, **1.523 s**, occurring at startup; no later >500 ms stall was recorded during the validation window.
+- Stall heap snapshot: **32.0 kB largest block / 49.9 kB free internal RAM**.
+
+Source fix commit: `771e51da8995c1e5a9c3e893879f723928ca3b1c`.
+
+The Windows reproducible build kit used for this freeze is `DEXTER_NTPFIX_STALLWATCH_ALL_IN_ONE_BUILDER_V11_2026-11-19.zip`, SHA-256 `ae586406577a1a39ace5a438fb537a1f1184d96ac479de67f10addb7ea5cb4d3`.
+
 ## Architecture
 
 - Base: WLED-MM `mdev`.
@@ -66,7 +91,7 @@ The original V1/V2 packet layouts are not modified. The 32-band extension uses h
 
 ## Compatibility
 
-Existing 16-band AudioReactive effects remain compatible. AudioSync packets remain 16-band and therefore retain compatibility with the existing protocol. A receiving True32EQ node explicitly interpolates received 16-band FFT data to 32 display bands; locally sampled data uses the real 32-band FFT path.
+Existing 16-band AudioReactive effects remain compatible. The legacy AudioSync V2 packet remains unchanged and is still transmitted for V2-only receivers; True32EQ adds a separate V3 packet carrying the real 32-band FFT data. A receiving True32EQ node uses V3 when available and otherwise explicitly interpolates received V2 16-band FFT data to 32 display bands; locally sampled data uses the real 32-band FFT path.
 
 ## Validation
 
